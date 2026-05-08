@@ -1,4 +1,15 @@
-// ===== DADOS DAS PERGUNTAS =====
+﻿// ===== CONFIG =====
+const XP_BASE = 30;
+const XP_NIVEL_BASE = 80;
+const FATOR_NIVEL = 1.08;
+const NIVEL_MAX = 100;
+const MOEDAS_ACERTO = 5;
+const MOEDAS_ERRO = 1;
+const BONUS_STREAK_MAX = 10;
+const MULT_DIFICULDADE = { facil: 1, medio: 1.5, dificil: 2.5 };
+const TEMPO_POR_DIFICULDADE = { facil: 10, medio: 15, dificil: 20 };
+
+// ===== ESTADO DO QUIZ =====
 let perguntas = [];
 let perguntaAtual = 0;
 let pontuacao = 0;
@@ -7,308 +18,1138 @@ let vidas = 3;
 let generoAtual = null;
 let quizAtivo = false;
 let poderUsado = false;
+let poderUsosRestantes = 1;
 let poderEfeito = null;
+let timerInterval = null;
+let tempoRestante = 0;
+let tempoResposta = 0;
+let generosJogados = [];
+let boostTimerInterval = null;
+let boostTempoRestante = 0;
+let boostAtual = null;
 
+// ===== PODERES =====
 const poderesDisponiveis = {
-    naruto: { nome: 'Modo Sábio', desc: '+50 XP no próximo acerto', icone: '🍃', tipo: 'xp_bonus' },
-    goku: { nome: 'Kamehameha', desc: 'Elimina 2 opções erradas', icone: '⚡', tipo: 'eliminar_opcoes' },
-    luffy: { nome: 'Gomu Gomu', desc: 'Pula a questão sem perder vida', icone: '🪨', tipo: 'pular_questao' },
-    pikachu: { nome: 'Choque do Trovão', desc: 'Revela a resposta certa por 2s', icone: '⚡', tipo: 'revelar_resposta' },
-    tanjiro: { nome: 'Respiração da Água', desc: 'Recupera 1 vida', icone: '🌊', tipo: 'curar_vida' },
-    gojo: { nome: 'Roxo (Hollow Purple)', desc: 'PASSAR AUTOMÁTICO na questão! 💜', icone: '💜', tipo: 'passar_questao' },
-    mikasa: { nome: 'Lâminas Titânicas', desc: 'Dobra moedas no próximo acerto', icone: '🗡️', tipo: 'moedas_dobradas' },
-    sailor: { nome: 'Moon Healing', desc: 'Restaura TODAS as vidas!', icone: '🌙', tipo: 'curar_tudo' },
-    vegeta: { nome: 'Final Flash', desc: 'Triplica XP no próximo acerto', icone: '💥', tipo: 'xp_triplo' },
-    itachi: { nome: 'Tsukuyomi', desc: 'Revela a resposta certa por 3s', icone: '🔮', tipo: 'revelar_tempo' }
+    naruto: { nome: 'Modo Sabio', desc: '+50 XP no proximo acerto', icone: '🍃', tipo: 'xp_bonus', cor: '#f7971e' },
+    goku: { nome: 'Kamehameha', desc: 'Elimina 2 opcoes erradas', icone: '⚡', tipo: 'eliminar_opcoes', cor: '#3b82f6' },
+    luffy: { nome: 'Gomu Gomu', desc: 'Pula a questao sem perder vida', icone: '🪨', tipo: 'pular_questao', cor: '#ef4444' },
+    pikachu: { nome: 'Choque do Trovao', desc: 'Revela a resposta certa por 2s', icone: '⚡', tipo: 'revelar_resposta', cor: '#fbbf24' },
+    tanjiro: { nome: 'Respiracao da Agua', desc: 'Recupera 1 vida', icone: '🌊', tipo: 'curar_vida', cor: '#4ade80' },
+    gojo: { nome: 'Roxo (Hollow Purple)', desc: 'PASSAR AUTOMATICO na questao! 💜', icone: '💜', tipo: 'passar_questao', cor: '#a855f7' },
+    mikasa: { nome: 'Laminas Titanicas', desc: 'Dobra moedas no proximo acerto', icone: '🗡️', tipo: 'moedas_dobradas', cor: '#8b5cf6' },
+    sailor: { nome: 'Moon Healing', desc: 'Restaura TODAS as vidas!', icone: '🌙', tipo: 'curar_tudo', cor: '#ec4899' },
+    vegeta: { nome: 'Final Flash', desc: 'Triplica XP no proximo acerto', icone: '💥', tipo: 'xp_triplo', cor: '#14b8a6' },
+    itachi: { nome: 'Tsukuyomi', desc: 'Revela a resposta certa por 3s', icone: '🔮', tipo: 'revelar_tempo', cor: '#f87171' }
 };
 
-const multiplicadoresRank = {
-    bronze: 1.1, prata: 1.3, ouro: 1.5, platina: 1.7, diamante: 2.0, mestre: 2.5, desafiante: 3.0
-};
+// ===== CONQUISTAS =====
+const conquistas = [
+    { id: 'primeira_resposta', nome: 'Primeiro Passo', desc: 'Responda sua primeira pergunta', icone: '🌱', condicao: u => u.totalPerguntas >= 1, recompensaXP: 50 },
+    { id: 'dez_acertos', nome: 'Aprendiz', desc: 'Acerte 10 perguntas no total', icone: '📚', condicao: u => u.totalAcertos >= 10, recompensaXP: 100 },
+    { id: 'cinquenta_acertos', nome: 'Estudioso', desc: 'Acerte 50 perguntas no total', icone: '🎓', condicao: u => u.totalAcertos >= 50, recompensaXP: 300 },
+    { id: 'cem_acertos', nome: 'Sabe-Tudo', desc: 'Acerte 100 perguntas no total', icone: '🧠', condicao: u => u.totalAcertos >= 100, recompensaXP: 800 },
+    { id: 'perfeito', nome: 'PERFEITO!', desc: 'Faca um jogo perfeito (100%)', icone: '⭐', condicao: () => false, recompensaXP: 200, especial: true },
+    { id: 'streak_5', nome: 'Em Serie', desc: 'Acerte 5 perguntas seguidas', icone: '🔥', condicao: u => u.maxStreak >= 5, recompensaXP: 150 },
+    { id: 'streak_10', nome: 'Imparavel', desc: 'Acerte 10 perguntas seguidas', icone: '💥', condicao: u => u.maxStreak >= 10, recompensaXP: 400 },
+    { id: 'colecionador', nome: 'Colecionador', desc: 'Compre 3 personagens', icone: '🎭', condicao: u => u.inventario.personagens.length >= 3, recompensaXP: 200 },
+    { id: 'nivel_10', nome: 'Level Up!', desc: 'Atinga o nivel 10', icone: '⬆️', condicao: u => u.nivel >= 10, recompensaXP: 300 },
+    { id: 'nivel_25', nome: 'Veterano', desc: 'Atinga o nivel 25', icone: '🏅', condicao: u => u.nivel >= 25, recompensaXP: 600 },
+    { id: 'rico', nome: 'Milionario', desc: 'Acumule 500 moedas', icone: '🪙', condicao: u => u.moedas >= 500, recompensaXP: 200 },
+    { id: 'todos_generos', nome: 'Explorador', desc: 'Jogue em todos os generos disponiveis', icone: '🌍', condicao: () => false, recompensaXP: 500, especial: true },
+    { id: 'dez_erros', nome: 'Errando Aprende-se', desc: 'Erre 10 perguntas no total', icone: '💪', condicao: u => (u.totalPerguntas - u.totalAcertos) >= 10, recompensaXP: 100 },
+    { id: 'cinquenta_erros', nome: 'Persistente', desc: 'Erre 50 perguntas no total', icone: '🛡️', condicao: u => (u.totalPerguntas - u.totalAcertos) >= 50, recompensaXP: 300 },
+    { id: 'rapido', nome: 'Relampago', desc: 'Responda em menos de 3 segundos', icone: '⚡', condicao: () => false, recompensaXP: 100, especial: true },
+    { id: 'duzentos_acertos', nome: 'Mestre dos Quiz', desc: 'Acerte 200 perguntas no total', icone: '🏆', condicao: u => u.totalAcertos >= 200, recompensaXP: 1500 },
+    { id: 'quinhentos_acertos', nome: 'Enciclopedia', desc: 'Acerte 500 perguntas no total', icone: '📖', condicao: u => u.totalAcertos >= 500, recompensaXP: 3000 },
+    { id: 'mil_acertos', nome: 'Lenda Viva', desc: 'Acerte 1000 perguntas no total', icone: '👑', condicao: u => u.totalAcertos >= 1000, recompensaXP: 8000 },
+    { id: 'streak_15', nome: 'Inferno', desc: 'Acerte 15 perguntas seguidas', icone: '🔥', condicao: u => u.maxStreak >= 15, recompensaXP: 800 },
+    { id: 'streak_20', nome: 'Deus do Quiz', desc: 'Acerte 20 perguntas seguidas', icone: '⚡', condicao: u => u.maxStreak >= 20, recompensaXP: 2000 },
+    { id: 'nivel_50', nome: 'Lendario', desc: 'Atinga o nivel 50', icone: '💎', condicao: u => u.nivel >= 50, recompensaXP: 2000 },
+    { id: 'nivel_69', nome: 'Maximo', desc: 'Atinga o nivel maximo (69)', icone: '🌟', condicao: u => u.nivel >= 69, recompensaXP: 5000 },
+    { id: 'rico_1000', nome: 'Magnata', desc: 'Acumule 1000 moedas', icone: '💰', condicao: u => u.moedas >= 1000, recompensaXP: 500 },
+    { id: 'rico_5000', nome: 'Tio Patinhas', desc: 'Acumule 5000 moedas', icone: '🤑', condicao: u => u.moedas >= 5000, recompensaXP: 1500 },
+    { id: 'colecionador_5', nome: 'Fanatico', desc: 'Compre 5 personagens', icone: '🎪', condicao: u => (u.inventario.personagens || []).length >= 5, recompensaXP: 500 },
+    { id: 'colecionador_10', nome: 'Todos os Personagens', desc: 'Compre todos os personagens', icone: '🏰', condicao: u => (u.inventario.personagens || []).length >= 10, recompensaXP: 2000 },
+    { id: 'rank_ouro', nome: 'Classe Alta', desc: 'Compre o rank Ouro', icone: '🥇', condicao: u => (u.inventario.ranks || []).includes('ouro'), recompensaXP: 400 },
+    { id: 'rank_mestre', nome: 'Supremo', desc: 'Compre o rank Mestre', icone: '👑', condicao: u => (u.inventario.ranks || []).includes('mestre'), recompensaXP: 1500 },
+    { id: 'cem_erros', nome: 'Perseveranca', desc: 'Erre 100 perguntas no total', icone: '🛡️', condicao: u => (u.totalPerguntas - u.totalAcertos) >= 100, recompensaXP: 600 },
+    { id: 'trezentos_erros', nome: 'Inquebravel', desc: 'Erre 300 perguntas no total', icone: '⛓️', condicao: u => (u.totalPerguntas - u.totalAcertos) >= 300, recompensaXP: 1500 },
+    { id: 'poder_usado', nome: 'Poderoso', desc: 'Use um poder pela primeira vez', icone: '💜', condicao: () => false, recompensaXP: 100, especial: true },
+    { id: 'todos_poderes', nome: 'Colecionador de Poderes', desc: 'Use todos os poderes disponiveis', icone: '🔮', condicao: () => false, recompensaXP: 2000, especial: true },
+];
 
+// ===== PERGUNTAS - GAMES =====
 const perguntasGames = [
-    { pergunta: "Qual é o nome do protagonista da série de jogos 'The Legend of Zelda'?", opcoes: ["Zelda", "Ganon", "Link", "Sheik"], correta: 2, cat: 'games' },
-    { pergunta: "Em 'Minecraft', qual picareta é necessária para minerar diamante?", opcoes: ["Madeira", "Pedra", "Ferro", "Ouro"], correta: 2, cat: 'games' },
-    { pergunta: "Qual jogo popularizou o gênero Battle Royale?", opcoes: ["Fortnite", "PUBG", "Apex Legends", "H1Z1"], correta: 1, cat: 'games' },
-    { pergunta: "Qual empresa criou o 'Super Mario'?", opcoes: ["Sega", "Sony", "Microsoft", "Nintendo"], correta: 3, cat: 'games' },
-    { pergunta: "Em 'Among Us', quantos impostores podem haver em uma partida com 10 jogadores?", opcoes: ["1", "2", "3", "4"], correta: 2, cat: 'games' },
-    { pergunta: "RPG de mundo aberto da CD Projekt Red?", opcoes: ["Skyrim", "The Witcher 3", "Dark Souls", "Elden Ring"], correta: 1, cat: 'games' },
-    { pergunta: "Mascote do jogo 'Sonic the Hedgehog'?", opcoes: ["Lobo", "Ouriço", "Raposa", "Gato"], correta: 1, cat: 'games' },
-    { pergunta: "Moeda virtual do 'Fortnite'?", opcoes: ["V-Bucks", "R6 Credits", "COD Points", "Apex Coins"], correta: 0, cat: 'games' },
-    { pergunta: "Jogo mais vendido de todos os tempos?", opcoes: ["GTA V", "Tetris", "Minecraft", "Wii Sports"], correta: 2, cat: 'games' },
-    { pergunta: "Golpe especial mais famoso de Ryu em 'Street Fighter'?", opcoes: ["Sonic Boom", "Hadouken", "Shoryuken", "Tatsumaki"], correta: 1, cat: 'games' },
-    { pergunta: "Primeiro jogo com o personagem 'Solid Snake'?", opcoes: ["Metal Gear Solid", "Metal Gear", "Snake's Revenge", "MGS2"], correta: 1, cat: 'games' },
-    { pergunta: "Tipo do Pokémon inicial 'Charmander'?", opcoes: ["Água", "Planta", "Fogo", "Elétrico"], correta: 2, cat: 'games' },
-    { pergunta: "Qual jogo originou o termo 'Roguelike'?", opcoes: ["Rogue", "Spelunky", "Isaac", "Hades"], correta: 0, cat: 'games' },
-    { pergunta: "Empresa criadora da Unreal Engine?", opcoes: ["Valve", "Epic Games", "Unity", "Ubisoft"], correta: 1, cat: 'games' },
-    { pergunta: "Filho de Kratos em 'God of War' (2018)?", opcoes: ["Loki", "Atreus", "Thor", "Freyr"], correta: 1, cat: 'games' },
-    { pergunta: "Qual plataforma é da Microsoft?", opcoes: ["PlayStation", "Xbox", "Switch", "Steam Deck"], correta: 1, cat: 'games' },
-    { pergunta: "Personagem principal de 'Halo'?", opcoes: ["Cortana", "Master Chief", "Arbiter", "Sargeant"], correta: 1, cat: 'games' },
-    { pergunta: "Primeiro e-sport na TV aberta brasileira?", opcoes: ["LoL", "Counter-Strike", "FIFA", "Street Fighter"], correta: 1, cat: 'games' },
-    { pergunta: "Nome do robô ajudante em 'Portal 2'?", opcoes: ["GLaDOS", "Wheatley", "Atlas", "P-body"], correta: 1, cat: 'games' },
-    { pergunta: "Criador de 'Metal Gear Solid'?", opcoes: ["Shigeru Miyamoto", "Hideo Kojima", "Fumito Ueda", "Yoko Taro"], correta: 1, cat: 'games' },
-    { pergunta: "Em 'GTA V', qual cidade o jogo se passa?", opcoes: ["Liberty City", "Los Santos", "Vice City", "San Fierro"], correta: 1, cat: 'games' },
-    { pergunta: "Franquia de terror que popularizou 'survival horror'?", opcoes: ["Silent Hill", "Resident Evil", "Fatal Frame", "Alone in the Dark"], correta: 1, cat: 'games' },
-    { pergunta: "Jogo que inspirou o termo 'Metroidvania'?", opcoes: ["Castlevania + Metroid", "Hollow Knight", "Dead Cells", "Ori"], correta: 0, cat: 'games' },
-    { pergunta: "Personagem principal da série 'Tomb Raider'?", opcoes: ["Lara Croft", "Nathan Drake", "Jill Valentine", "Samus Aran"], correta: 0, cat: 'games' },
-    { pergunta: "Estúdio criador de 'Red Dead Redemption 2'?", opcoes: ["Rockstar", "Ubisoft", "EA", "Bethesda"], correta: 0, cat: 'games' },
-    { pergunta: "Qual jogo tem o subtítulo 'Breath of the Wild'?", opcoes: ["Zelda", "Xenoblade", "Final Fantasy", "Dragon Quest"], correta: 0, cat: 'games' },
-    { pergunta: "MOBA mais popular do mundo?", opcoes: ["Dota 2", "League of Legends", "Heroes of the Storm", "Smite"], correta: 1, cat: 'games' },
-    { pergunta: "Personagem principal de 'Devil May Cry'?", opcoes: ["Vergil", "Dante", "Nero", "Sparda"], correta: 1, cat: 'games' },
-    { pergunta: "Ano de lançamento do primeiro 'Super Mario Bros'?", opcoes: ["1983", "1985", "1987", "1990"], correta: 1, cat: 'games' },
-    { pergunta: "Jogo eletrônico mais antigo conhecido?", opcoes: ["Pong", "Spacewar!", "Tennis for Two", "Computer Space"], correta: 2, cat: 'games' },
-    { pergunta: "Nome do protagonista de 'Persona 5'?", opcoes: ["Ren Amamiya", "Yu Narukami", "Makoto Yuki", "Joker"], correta: 3, cat: 'games' },
-    { pergunta: "Console mais vendido da história?", opcoes: ["PS2", "PS4", "Switch", "DS"], correta: 0, cat: 'games' },
-    { pergunta: "Criador de 'The Legend of Zelda'?", opcoes: ["Miyamoto", "Kojima", "Aonuma", "Yoshiaki Koizumi"], correta: 0, cat: 'games' },
-    { pergunta: "Em 'Overwatch', qual herói usa uma katana?", opcoes: ["Genji", "Hanzo", "Reinhardt", "Tracer"], correta: 0, cat: 'games' },
-    { pergunta: "Sistema de 'souls' popularizado por qual jogo?", opcoes: ["Dark Souls", "Elden Ring", "Bloodborne", "Demon's Souls"], correta: 3, cat: 'games' },
-    { pergunta: "Gênero de 'Stardew Valley'?", opcoes: ["RPG", "Simulação/Fazenda", "Estratégia", "Puzzle"], correta: 1, cat: 'games' },
-    { pergunta: "Nome do antagonista em 'Shadow of the Colossus'?", opcoes: ["Dormin", "Emperor", "Malus", "Agro"], correta: 0, cat: 'games' },
-    { pergunta: "Ator que dublou Geralt em inglês em 'The Witcher 3'?", opcoes: ["Henry Cavill", "Doug Cockle", "Peter Kenny", "Tom Ellis"], correta: 1, cat: 'games' }
+    { pergunta: "Qual e o nome do protagonista da serie de jogos 'The Legend of Zelda'?", opcoes: ["Zelda", "Ganon", "Link", "Sheik"], correta: 2, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Em 'Minecraft', qual picareta e necessaria para minerar diamante?", opcoes: ["Madeira", "Pedra", "Ferro", "Ouro"], correta: 2, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Qual jogo popularizou o genero Battle Royale?", opcoes: ["Fortnite", "PUBG", "Apex Legends", "H1Z1"], correta: 1, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Qual empresa criou o 'Super Mario'?", opcoes: ["Sega", "Sony", "Microsoft", "Nintendo"], correta: 3, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Em 'Among Us', quantos impostores podem haver em uma partida com 10 jogadores?", opcoes: ["1", "2", "3", "4"], correta: 2, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "RPG de mundo aberto da CD Projekt Red?", opcoes: ["Skyrim", "The Witcher 3", "Dark Souls", "Elden Ring"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Mascote do jogo 'Sonic the Hedgehog'?", opcoes: ["Lobo", "Ourico", "Raposa", "Gato"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Moeda virtual do 'Fortnite'?", opcoes: ["V-Bucks", "R6 Credits", "COD Points", "Apex Coins"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Jogo mais vendido de todos os tempos?", opcoes: ["GTA V", "Tetris", "Minecraft", "Wii Sports"], correta: 2, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Golpe especial mais famoso de Ryu em 'Street Fighter'?", opcoes: ["Sonic Boom", "Hadouken", "Shoryuken", "Tatsumaki"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Primeiro jogo com o personagem 'Solid Snake'?", opcoes: ["Metal Gear Solid", "Metal Gear", "Snake's Revenge", "MGS2"], correta: 1, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Tipo do Pokemon inicial 'Charmander'?", opcoes: ["Agua", "Planta", "Fogo", "Eletrico"], correta: 2, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Qual jogo originou o termo 'Roguelike'?", opcoes: ["Rogue", "Spelunky", "Isaac", "Hades"], correta: 0, cat: 'games', dificuldade: 'dificil' },
+    { pergunta: "Empresa criadora da Unreal Engine?", opcoes: ["Valve", "Epic Games", "Unity", "Ubisoft"], correta: 1, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Filho de Kratos em 'God of War' (2018)?", opcoes: ["Loki", "Atreus", "Thor", "Freyr"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Qual plataforma e da Microsoft?", opcoes: ["PlayStation", "Xbox", "Switch", "Steam Deck"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Personagem principal de 'Halo'?", opcoes: ["Cortana", "Master Chief", "Arbiter", "Sargeant"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Primeiro e-sport na TV aberta brasileira?", opcoes: ["LoL", "Counter-Strike", "FIFA", "Street Fighter"], correta: 1, cat: 'games', dificuldade: 'dificil' },
+    { pergunta: "Nome do robo ajudante em 'Portal 2'?", opcoes: ["GLaDOS", "Wheatley", "Atlas", "P-body"], correta: 1, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Criador de 'Metal Gear Solid'?", opcoes: ["Shigeru Miyamoto", "Hideo Kojima", "Fumito Ueda", "Yoko Taro"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Em 'GTA V', qual cidade o jogo se passa?", opcoes: ["Liberty City", "Los Santos", "Vice City", "San Fierro"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Franquia de terror que popularizou 'survival horror'?", opcoes: ["Silent Hill", "Resident Evil", "Fatal Frame", "Alone in the Dark"], correta: 1, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Jogo que inspirou o termo 'Metroidvania'?", opcoes: ["Castlevania + Metroid", "Hollow Knight", "Dead Cells", "Ori"], correta: 0, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Personagem principal da serie 'Tomb Raider'?", opcoes: ["Lara Croft", "Nathan Drake", "Jill Valentine", "Samus Aran"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Estudio criador de 'Red Dead Redemption 2'?", opcoes: ["Rockstar", "Ubisoft", "EA", "Bethesda"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Qual jogo tem o subtitulo 'Breath of the Wild'?", opcoes: ["Zelda", "Xenoblade", "Final Fantasy", "Dragon Quest"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "MOBA mais popular do mundo?", opcoes: ["Dota 2", "League of Legends", "Heroes of the Storm", "Smite"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Personagem principal de 'Devil May Cry'?", opcoes: ["Vergil", "Dante", "Nero", "Sparda"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Ano de lancamento do primeiro 'Super Mario Bros'?", opcoes: ["1983", "1985", "1987", "1990"], correta: 1, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Jogo eletronico mais antigo conhecido?", opcoes: ["Pong", "Spacewar!", "Tennis for Two", "Computer Space"], correta: 2, cat: 'games', dificuldade: 'dificil' },
+    { pergunta: "Nome do protagonista de 'Persona 5'?", opcoes: ["Ren Amamiya", "Yu Narukami", "Makoto Yuki", "Joker"], correta: 3, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Console mais vendido da historia?", opcoes: ["PS2", "PS4", "Switch", "DS"], correta: 0, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Criador de 'The Legend of Zelda'?", opcoes: ["Miyamoto", "Kojima", "Aonuma", "Yoshiaki Koizumi"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Em 'Overwatch', qual heroi usa uma katana?", opcoes: ["Genji", "Hanzo", "Reinhardt", "Tracer"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Sistema de 'souls' popularizado por qual jogo?", opcoes: ["Dark Souls", "Elden Ring", "Bloodborne", "Demon's Souls"], correta: 3, cat: 'games', dificuldade: 'dificil' },
+    { pergunta: "Genero de 'Stardew Valley'?", opcoes: ["RPG", "Simulacao/Fazenda", "Estrategia", "Puzzle"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Nome do antagonista em 'Shadow of the Colossus'?", opcoes: ["Dormin", "Emperor", "Malus", "Agro"], correta: 0, cat: 'games', dificuldade: 'dificil' },
+    { pergunta: "Ator que dublou Geralt em ingles em 'The Witcher 3'?", opcoes: ["Henry Cavill", "Doug Cockle", "Peter Kenny", "Tom Ellis"], correta: 1, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Qual o nome original do jogo 'Street Fighter'?", opcoes: ["Fighting Street", "Street Fighter", "SF: The Beginning", "Fighter 1987"], correta: 1, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Em qual jogo aparece o protagonista 'Doomguy'?", opcoes: ["Doom", "Quake", "Wolfenstein", "Duke Nukem"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Quantos Gym Badges sao necessarios em Pokemon para desafiar a Elite Four?", opcoes: ["6", "8", "10", "4"], correta: 1, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Qual estudio desenvolveu 'The Last of Us'?", opcoes: ["Naughty Dog", "Insomniac", "Sucker Punch", "Santa Monica"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Jogo 'Civilization' e de qual genero?", opcoes: ["RTS", "Estrategia por Turnos", "MOBA", "RPG"], correta: 1, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Em 'Elden Ring', qual o titulo do jogador?", opcoes: ["Elden Lord", "Tarnished", "Foul Tarnished", "Maidenless"], correta: 1, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Qual console da Nintendo e hibrido (portatil + mesa)?", opcoes: ["Wii U", "Switch", "3DS", "Nintendo DS"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Franquia 'Assassin's Creed' e publicada por qual empresa?", opcoes: ["EA", "Ubisoft", "Activision", "Square Enix"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Qual jogo apresenta o personagem 'Nathan Drake'?", opcoes: ["Tomb Raider", "Uncharted", "The Last of Us", "Far Cry"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "MMORPG mais famoso da Blizzard?", opcoes: ["Overwatch", "World of Warcraft", "Diablo", "StarCraft"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Nome do protagonista de 'Half-Life'?", opcoes: ["Freeman", "Gordon Freeman", "Shepard", "Alyx"], correta: 1, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Qual jogo foi o primeiro a ter grafismo 3D em larga escala?", opcoes: ["Super Mario 64", "Tomb Raider", "Quake", "Virtua Fighter"], correta: 0, cat: 'games', dificuldade: 'dificil' },
+    { pergunta: "Em 'Mortal Kombat', qual golpe final e famoso?", opcoes: ["Fatality", "Brutality", "Animality", "Babality"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Saga 'Final Fantasy' pertence a qual empresa?", opcoes: ["Bandai Namco", "Square Enix", "Capcom", "Sega"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Qual o nome do mundo de 'The Witcher'?", opcoes: ["The Continent", "Midgard", "Azeroth", "Tamriel"], correta: 0, cat: 'games', dificuldade: 'dificil' },
+    { pergunta: "Jogo 'Celeste' e conhecido por ser?", opcoes: ["Open World", "Plataforma Dificil", "Battle Royale", "Simulacao"], correta: 1, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Qual e o nome do protagonista de 'Hollow Knight'?", opcoes: ["The Knight", "Hornet", "The Hollow Knight", "The Pale King"], correta: 0, cat: 'games', dificuldade: 'dificil' },
+    { pergunta: "Em 'Animal Crossing', o jogador mora em que tipo de lugar?", opcoes: ["Cidade", "Ilha", "Floresta", "Montanha"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Qual console usa a arquitetura 'Cell'?", opcoes: ["Xbox 360", "PlayStation 3", "Wii", "Dreamcast"], correta: 1, cat: 'games', dificuldade: 'dificil' },
+    { pergunta: "Estudio criador de 'Dark Souls'?", opcoes: ["FromSoftware", "Platinum Games", "Team Ninja", "Capcom"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Jogo mais famoso do genero 'Battle Royale' atualmente?", opcoes: ["PUBG", "Fortnite", "Apex Legends", "Warzone"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Em 'Metal Gear Solid', qual o nome do protagonista?", opcoes: ["Solid Snake", "Big Boss", "Raiden", "Liquid Snake"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Qual e o nome do mascote da Sega?", opcoes: ["Mario", "Sonic", "Crash", "Spyro"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Jogo 'The Sims' e um simulador de?", opcoes: ["Vida", "Construcao", "Fazenda", "Cidade"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Em 'League of Legends', quantos jogadores por time?", opcoes: ["3", "4", "5", "6"], correta: 2, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Qual empresa criou o console 'PlayStation'?", opcoes: ["Microsoft", "Nintendo", "Sony", "Sega"], correta: 2, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Em 'BioShock', qual e o nome da cidade subaquatica?", opcoes: ["Rapture", "Columbia", "Silent Hill", "Arkham"], correta: 0, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Nome do protagonista de 'God of War'?", opcoes: ["Zeus", "Kratos", "Ares", "Atreus"], correta: 1, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Qual jogo introduziu o personagem 'Master Chief'?", opcoes: ["Halo: Combat Evolved", "Halo 2", "Halo 3", "Halo: Reach"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Tom Nook e um personagem de qual franquia?", opcoes: ["Animal Crossing", "Pokemon", "Stardew Valley", "Harvest Moon"], correta: 0, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Em 'Portal', qual a cor do portal de entrada?", opcoes: ["Azul", "Laranja", "Verde", "Roxo"], correta: 0, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Jogo eletronico mais caro ja produzido?", opcoes: ["GTA V", "Cyberpunk 2077", "Star Citizen", "Red Dead Redemption 2"], correta: 2, cat: 'games', dificuldade: 'dificil' },
+    { pergunta: "Qual era o nome do primeiro videogame domestico?", opcoes: ["Atari 2600", "Magnavox Odyssey", "ColecoVision", "Intellivision"], correta: 1, cat: 'games', dificuldade: 'dificil' },
+    { pergunta: "Qual jogo popularizou o termo 'Battle Pass'?", opcoes: ["Fortnite", "Dota 2", "Apex Legends", "Call of Duty"], correta: 0, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Em qual cidade se passa 'Cyberpunk 2077'?", opcoes: ["Night City", "Los Santos", "Neo Tokyo", "Rapture"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Serie 'Dark Souls' e conhecida por ser:", opcoes: ["Dificil", "Facil", "Curta", "Infantil"], correta: 0, cat: 'games', dificuldade: 'facil' },
+    { pergunta: "Qual a nacionalidade do protagonista de 'Ghost of Tsushima'?", opcoes: ["Chines", "Coreano", "Japones", "Mongol"], correta: 2, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Em 'Horizon Zero Dawn', a protagonista se chama:", opcoes: ["Aloy", "Lara", "Ellie", "Senua"], correta: 0, cat: 'games', dificuldade: 'medio' },
+    { pergunta: "Qual foi o primeiro jogo da serie 'Resident Evil'?", opcoes: ["Resident Evil 0", "Resident Evil 1", "Resident Evil 2", "Resident Evil Code Veronica"], correta: 1, cat: 'games', dificuldade: 'facil' },
 ];
 
+// ===== PERGUNTAS - FILMES =====
 const perguntasFilmes = [
-    { pergunta: "Ator do Coringa em 'O Cavaleiro das Trevas' (2008)?", opcoes: ["Phoenix", "Nicholson", "Heath Ledger", "Leto"], correta: 2, cat: 'filmes' },
-    { pergunta: "Pílulas que Morpheus oferece em 'Matrix'?", opcoes: ["Azul e Vermelha", "Vermelha e Azul", "Verde e Azul", "Preta e Branca"], correta: 1, cat: 'filmes' },
-    { pergunta: "Robô protagonista de 'Wall-E'?", opcoes: ["EVE", "Wall-E", "M-O", "AUTO"], correta: 1, cat: 'filmes' },
-    { pergunta: "Quem empunha o Mjolnir em 'Vingadores: Ultimato'?", opcoes: ["Thor", "Capitão América", "Homem de Ferro", "Hulk"], correta: 1, cat: 'filmes' },
-    { pergunta: "Primeiro filme da Pixar?", opcoes: ["Nemo", "Monstros S.A.", "Toy Story", "Os Incríveis"], correta: 2, cat: 'filmes' },
-    { pergunta: "Robô de Cooper em 'Interestelar'?", opcoes: ["TARS", "CASE", "KIPP", "HAL"], correta: 0, cat: 'filmes' },
-    { pergunta: "Ator que interpretou Wolverine nos X-Men?", opcoes: ["Ryan Reynolds", "Hugh Jackman", "Patrick Stewart", "James Marsden"], correta: 1, cat: 'filmes' },
-    { pergunta: "Velocidade para viajar no tempo em 'De Volta para o Futuro'?", opcoes: ["60 mph", "88 mph", "100 mph", "120 mph"], correta: 1, cat: 'filmes' },
-    { pergunta: "Filme da Disney com o personagem 'Mufasa'?", opcoes: ["O Rei Leão", "Branca de Neve", "Aladdin", "A Bela e a Fera"], correta: 0, cat: 'filmes' },
-    { pergunta: "Caçador de recompensas mais famoso de 'Star Wars'?", opcoes: ["Jango Fett", "Boba Fett", "Din Djarin", "Cad Bane"], correta: 1, cat: 'filmes' },
-    { pergunta: "Filme que tornou Keanu Reeves conhecido como 'John Wick'?", opcoes: ["Speed", "Matrix", "John Wick", "Point Break"], correta: 2, cat: 'filmes' },
-    { pergunta: "Dinossauro protagonista de 'Jurassic Park'?", opcoes: ["T-Rex", "Velociraptor", "Brachiosaurus", "Triceratops"], correta: 0, cat: 'filmes' },
-    { pergunta: "Portador do Um Anel em 'O Senhor dos Anéis'?", opcoes: ["Gandalf", "Aragorn", "Frodo", "Legolas"], correta: 2, cat: 'filmes' },
-    { pergunta: "Animação da Pixar com o rato Remy?", opcoes: ["Ratatouille", "Up", "Divertida Mente", "Toy Story 3"], correta: 0, cat: 'filmes' },
-    { pergunta: "Casas de Hogwarts em 'Harry Potter'?", opcoes: ["3", "4", "5", "6"], correta: 1, cat: 'filmes' },
-    { pergunta: "Ditador de 'Mad Max: Estrada da Fúria'?", opcoes: ["Immortan Joe", "Rictus", "The Bullet Farmer", "The People Eater"], correta: 0, cat: 'filmes' },
-    { pergunta: "Diretor de 'Clube da Luta'?", opcoes: ["Christopher Nolan", "David Fincher", "Quentin Tarantino", "Ridley Scott"], correta: 1, cat: 'filmes' },
-    { pergunta: "Modelo do exterminador que protege John Connor em 'O Exterminador do Futuro 2'?", opcoes: ["T-800", "T-1000", "TX", "T-850"], correta: 0, cat: 'filmes' },
-    { pergunta: "Animação da Disney sobre o Dia dos Mortos?", opcoes: ["Viva: A Vida é uma Festa", "Frozen", "Moana", "Encanto"], correta: 0, cat: 'filmes' },
-    { pergunta: "Ator que interpretou o agente K em 'Blade Runner 2049'?", opcoes: ["Harrison Ford", "Ryan Gosling", "Jared Leto", "Dave Bautista"], correta: 1, cat: 'filmes' },
-    { pergunta: "Dragão de Soluço em 'Como Treinar Seu Dragão'?", opcoes: ["Fúria da Noite", "Banguela", "Furia Mortal", "Furia Celestial"], correta: 1, cat: 'filmes' },
-    { pergunta: "Planeta deserto em 'Duna' (2021)?", opcoes: ["Caladan", "Arrakis", "Giedi Prime", "Salusa Secundus"], correta: 1, cat: 'filmes' },
-    { pergunta: "Atriz que interpretou a Mulher-Maravilha?", opcoes: ["Scarlett Johansson", "Gal Gadot", "Margot Robbie", "Brie Larson"], correta: 1, cat: 'filmes' },
-    { pergunta: "Primeira aparição do Pantera Negra no MCU?", opcoes: ["Pantera Negra", "Guerra Civil", "Era de Ultron", "Homem de Ferro 2"], correta: 1, cat: 'filmes' },
-    { pergunta: "Filme de maior bilheteria da história (sem correção)?", opcoes: ["Vingadores: Ultimato", "Avatar", "Titanic", "Star Wars: O Despertar da Força"], correta: 1, cat: 'filmes' },
-    { pergunta: "Nome do T-Rex em 'Jurassic Park'?", opcoes: ["Rexy", "Rex", "Tyrant", "Raptor"], correta: 0, cat: 'filmes' },
-    { pergunta: "Qual filme ganhou o Oscar de Melhor Filme em 2020?", opcoes: ["1917", "Parasita", "Coringa", "Era Uma Vez em Hollywood"], correta: 1, cat: 'filmes' },
-    { pergunta: "Diretor de 'Interestelar' e 'A Origem'?", opcoes: ["Nolan", "Villeneuve", "Fincher", "Spielberg"], correta: 0, cat: 'filmes' },
-    { pergunta: "Ator principal de 'Gladiador' (2000)?", opcoes: ["Russell Crowe", "Joaquin Phoenix", "Brad Pitt", "Matt Damon"], correta: 0, cat: 'filmes' },
-    { pergunta: "Desenho animado com o personagem 'Bob Esponja'?", opcoes: ["Bob Esponja", "Patrick", "Lula Molusco", "Siriguejo"], correta: 0, cat: 'filmes' },
-    { pergunta: "Ano de lançamento de 'Matrix'?", opcoes: ["1997", "1998", "1999", "2000"], correta: 2, cat: 'filmes' },
-    { pergunta: "Herói da Marvel que pode ficar invisível?", opcoes: ["Homem Invisível", "Susan Storm", "Mística", "Visão"], correta: 1, cat: 'filmes' },
-    { pergunta: "Nome verdadeiro do Darth Vader?", opcoes: ["Luke", "Anakin", "Obi-Wan", "Palpatine"], correta: 1, cat: 'filmes' },
-    { pergunta: "Em 'Toy Story', qual é o nome do caubói?", opcoes: ["Woody", "Buzz", "Jessie", "Rex"], correta: 0, cat: 'filmes' },
-    { pergunta: "Filme onde o personagem 'Forrest Gump' aparece?", opcoes: ["Forrest Gump", "Náufrago", "Philadelphia", "O Poderoso Chefão"], correta: 0, cat: 'filmes' },
-    { pergunta: "Nave espacial em 'Alien - O 8º Passageiro'?", opcoes: ["Nostromo", "Sulaco", "Prometheus", "Enterprise"], correta: 0, cat: 'filmes' },
-    { pergunta: "País de origem dos filmes do 'Estúdio Ghibli'?", opcoes: ["China", "Japão", "Coreia", "Tailândia"], correta: 1, cat: 'filmes' },
-    { pergunta: "Série de TV zumbi mais famosa?", opcoes: ["The Walking Dead", "Z Nation", "iZombie", "Black Summer"], correta: 0, cat: 'filmes' },
-    { pergunta: "Qual filme tem o famoso 'discurso 'You Can't Handle the Truth'?'?", opcoes: ["Questão de Honra", "O Pavilhão dos Dourados", "O Advogado do Diabo", "12 Homens e uma Sentença"], correta: 0, cat: 'filmes' },
-    { pergunta: "Quantos filmes 'O Poderoso Chefão' existem?", opcoes: ["1", "2", "3", "4"], correta: 2, cat: 'filmes' }
+    { pergunta: "Ator do Coringa em 'O Cavaleiro das Trevas' (2008)?", opcoes: ["Phoenix", "Nicholson", "Heath Ledger", "Leto"], correta: 2, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Pilulas que Morpheus oferece em 'Matrix'?", opcoes: ["Azul e Vermelha", "Vermelha e Azul", "Verde e Azul", "Preta e Branca"], correta: 1, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Robo protagonista de 'Wall-E'?", opcoes: ["EVE", "Wall-E", "M-O", "AUTO"], correta: 1, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Quem empunha o Mjolnir em 'Vingadores: Ultimato'?", opcoes: ["Thor", "Capitao America", "Homem de Ferro", "Hulk"], correta: 1, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Primeiro filme da Pixar?", opcoes: ["Nemo", "Monstros S.A.", "Toy Story", "Os Incriveis"], correta: 2, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Robo de Cooper em 'Interestelar'?", opcoes: ["TARS", "CASE", "KIPP", "HAL"], correta: 0, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Ator que interpretou Wolverine nos X-Men?", opcoes: ["Ryan Reynolds", "Hugh Jackman", "Patrick Stewart", "James Marsden"], correta: 1, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Velocidade para viajar no tempo em 'De Volta para o Futuro'?", opcoes: ["60 mph", "88 mph", "100 mph", "120 mph"], correta: 1, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Filme da Disney com o personagem 'Mufasa'?", opcoes: ["O Rei Leao", "Branca de Neve", "Aladdin", "A Bela e a Fera"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Cacador de recompensas mais famoso de 'Star Wars'?", opcoes: ["Jango Fett", "Boba Fett", "Din Djarin", "Cad Bane"], correta: 1, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Filme que tornou Keanu Reeves conhecido como 'John Wick'?", opcoes: ["Speed", "Matrix", "John Wick", "Point Break"], correta: 2, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Dinossauro protagonista de 'Jurassic Park'?", opcoes: ["T-Rex", "Velociraptor", "Brachiosaurus", "Triceratops"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Portador do Um Anel em 'O Senhor dos Aneis'?", opcoes: ["Gandalf", "Aragorn", "Frodo", "Legolas"], correta: 2, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Animacao da Pixar com o rato Remy?", opcoes: ["Ratatouille", "Up", "Divertida Mente", "Toy Story 3"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Casas de Hogwarts em 'Harry Potter'?", opcoes: ["3", "4", "5", "6"], correta: 1, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Ditador de 'Mad Max: Estrada da Furia'?", opcoes: ["Immortan Joe", "Rictus", "The Bullet Farmer", "The People Eater"], correta: 0, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Diretor de 'Clube da Luta'?", opcoes: ["Christopher Nolan", "David Fincher", "Quentin Tarantino", "Ridley Scott"], correta: 1, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Modelo do exterminador que protege John Connor em 'O Exterminador do Futuro 2'?", opcoes: ["T-800", "T-1000", "TX", "T-850"], correta: 0, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Animacao da Disney sobre o Dia dos Mortos?", opcoes: ["Viva: A Vida e uma Festa", "Frozen", "Moana", "Encanto"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Ator que interpretou o agente K em 'Blade Runner 2049'?", opcoes: ["Harrison Ford", "Ryan Gosling", "Jared Leto", "Dave Bautista"], correta: 1, cat: 'filmes', dificuldade: 'dificil' },
+    { pergunta: "Dragao de Soluco em 'Como Treinar Seu Dragao'?", opcoes: ["Furia da Noite", "Banguela", "Furia Mortal", "Furia Celestial"], correta: 1, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Planeta deserto em 'Duna' (2021)?", opcoes: ["Caladan", "Arrakis", "Giedi Prime", "Salusa Secundus"], correta: 1, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Atriz que interpretou a Mulher-Maravilha?", opcoes: ["Scarlett Johansson", "Gal Gadot", "Margot Robbie", "Brie Larson"], correta: 1, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Primeira aparicao do Pantera Negra no MCU?", opcoes: ["Pantera Negra", "Guerra Civil", "Era de Ultron", "Homem de Ferro 2"], correta: 1, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Filme de maior bilheteria da historia (sem correcao)?", opcoes: ["Vingadores: Ultimato", "Avatar", "Titanic", "Star Wars: O Despertar da Forca"], correta: 1, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Nome do T-Rex em 'Jurassic Park'?", opcoes: ["Rexy", "Rex", "Tyrant", "Raptor"], correta: 0, cat: 'filmes', dificuldade: 'dificil' },
+    { pergunta: "Qual filme ganhou o Oscar de Melhor Filme em 2020?", opcoes: ["1917", "Parasita", "Coringa", "Era Uma Vez em Hollywood"], correta: 1, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Diretor de 'Interestelar' e 'A Origem'?", opcoes: ["Nolan", "Villeneuve", "Fincher", "Spielberg"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Ator principal de 'Gladiador' (2000)?", opcoes: ["Russell Crowe", "Joaquin Phoenix", "Brad Pitt", "Matt Damon"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Desenho animado com o personagem 'Bob Esponja'?", opcoes: ["Bob Esponja", "Patrick", "Lula Molusco", "Sirigueijo"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Ano de lancamento de 'Matrix'?", opcoes: ["1997", "1998", "1999", "2000"], correta: 2, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Heroi da Marvel que pode ficar invisivel?", opcoes: ["Homem Invisivel", "Susan Storm", "Mistica", "Visao"], correta: 1, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Nome verdadeiro do Darth Vader?", opcoes: ["Luke", "Anakin", "Obi-Wan", "Palpatine"], correta: 1, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Em 'Toy Story', qual e o nome do cauboi?", opcoes: ["Woody", "Buzz", "Jessie", "Rex"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Filme onde o personagem 'Forrest Gump' aparece?", opcoes: ["Forrest Gump", "Naufrago", "Philadelphia", "O Poderoso Chefeao"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Nave espacial em 'Alien - O 8 Passageiro'?", opcoes: ["Nostromo", "Sulaco", "Prometheus", "Enterprise"], correta: 0, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Pais de origem dos filmes do 'Estudio Ghibli'?", opcoes: ["China", "Japao", "Coreia", "Tailandia"], correta: 1, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Serie de TV zumbi mais famosa?", opcoes: ["The Walking Dead", "Z Nation", "iZombie", "Black Summer"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Qual filme tem o famoso discurso 'You Can't Handle the Truth'?", opcoes: ["Questao de Honra", "O Pavao dos Dourados", "O Advogado do Diabo", "12 Homens e uma Sentenca"], correta: 0, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Quantos filmes 'O Poderoso Chefeao' existem?", opcoes: ["1", "2", "3", "4"], correta: 2, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Qual ator interpretou Jack Sparrow em 'Piratas do Caribe'?", opcoes: ["Orlando Bloom", "Johnny Depp", "Geoffrey Rush", "Kevin McNally"], correta: 1, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Filme vencedor do Oscar de Melhor Filme em 2023?", opcoes: ["Tudo em Todo Lugar ao Mesmo Tempo", "Os Fabelmans", "A Baleia", "Top Gun: Maverick"], correta: 0, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Qual o nome do dinossauro em 'Jurassic Park' que cuspe veneno?", opcoes: ["Dilophosaurus", "Velociraptor", "Spinosaurus", "T-Rex"], correta: 0, cat: 'filmes', dificuldade: 'dificil' },
+    { pergunta: "Ator que interpretou o Charada em 'The Batman' (2022)?", opcoes: ["Paul Dano", "Colin Farrell", "Jeffrey Wright", "John Turturro"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Qual e o planeta natal de Superman?", opcoes: ["Krypton", "Mars", "Venus", "Jupiter"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Em 'Clube da Luta', qual e a primeira regra?", opcoes: ["Nao falar sobre o Clube da Luta", "So vale golpe baixo", "Lutar ate o fim", "Nao desistir nunca"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Qual o nome do dragao de 'Game of Thrones' mais famoso?", opcoes: ["Drogon", "Viserion", "Rhaegal", "Balerion"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Diretor de 'Pulp Fiction'?", opcoes: ["Quentin Tarantino", "Martin Scorsese", "Steven Spielberg", "David Lynch"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Em 'O Senhor dos Aneis', quem disse 'You shall not pass!'?", opcoes: ["Gandalf", "Aragorn", "Saruman", "Elrond"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Qual filme da Disney apresenta o personagem 'Elsa'?", opcoes: ["Moana", "Frozen", "Encanto", "Valente"], correta: 1, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Quantos filmes 'Velozes e Furiosos' existem (principal)?", opcoes: ["8", "9", "10", "11"], correta: 2, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Em 'O Iluminado', qual a frase famosa de Jack?", opcoes: ["Here's Johnny!", "Redrum!", "All work and no play", "Come play with us"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "A nave em 'Alien' se chama?", opcoes: ["Nostromo", "Sulaco", "Prometheus", "Covenant"], correta: 0, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Saga 'Crepusculo' e sobre?", opcoes: ["Vampiros e Lobisomens", "Zumbis", "Fadas", "Magia"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Nome do gorila gigante famoso do cinema?", opcoes: ["King Kong", "Godzilla", "Mighty Joe Young", "Donkey Kong"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "A qual familia pertence Romeo em 'Romeu e Julieta'?", opcoes: ["Montague", "Capulet", "Escalus", "Paris"], correta: 0, cat: 'filmes', dificuldade: 'medio' },
+    { pergunta: "Quem interpretou o Coringa em 2019?", opcoes: ["Heath Ledger", "Joaquin Phoenix", "Jared Leto", "Jack Nicholson"], correta: 1, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Em 'Vingadores: Guerra Infinita', Thanos busca o que?", opcoes: ["Joias do Infinito", "Martelo do Thor", "Escudo do Capitao", "Armadura do Homem de Ferro"], correta: 0, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Cidade de 'Batman'?", opcoes: ["Metropolis", "Gotham", "Star City", "Central City"], correta: 1, cat: 'filmes', dificuldade: 'facil' },
+    { pergunta: "Nome do menino em 'A Vida e Bela'?", opcoes: ["Guido", "Giosue", "Joshua", "Eliseu"], correta: 1, cat: 'filmes', dificuldade: 'dificil' },
 ];
+
+// ===== PERGUNTAS - MATEMATICA =====
+const perguntasMatematica = [
+    { pergunta: "Quanto e 7 x 8?", opcoes: ["48", "56", "64", "72"], correta: 1, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Qual e a raiz quadrada de 144?", opcoes: ["10", "11", "12", "13"], correta: 2, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Quanto e 15% de 200?", opcoes: ["25", "30", "35", "20"], correta: 1, cat: 'matematica', dificuldade: 'medio' },
+    { pergunta: "Qual e o valor de Pi (aproximado)?", opcoes: ["3.14", "3.16", "3.12", "3.18"], correta: 0, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Quanto e 2 elevado a 10?", opcoes: ["512", "1024", "2048", "256"], correta: 1, cat: 'matematica', dificuldade: 'medio' },
+    { pergunta: "Qual e o resultado de 0 dividido por qualquer numero?", opcoes: ["0", "1", "Infinito", "Indefinido"], correta: 0, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Quantos lados tem um hexagono?", opcoes: ["5", "6", "7", "8"], correta: 1, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Quanto e 1 + 2 + 3 + 4 + 5?", opcoes: ["12", "13", "14", "15"], correta: 3, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Qual e o MMC de 4 e 6?", opcoes: ["10", "12", "14", "24"], correta: 1, cat: 'matematica', dificuldade: 'medio' },
+    { pergunta: "Quantos graus tem um triangulo?", opcoes: ["90", "180", "270", "360"], correta: 1, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Qual e o logaritmo de 100 na base 10?", opcoes: ["1", "2", "10", "100"], correta: 1, cat: 'matematica', dificuldade: 'medio' },
+    { pergunta: "Quanto e 9 ao quadrado?", opcoes: ["72", "81", "90", "99"], correta: 1, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Qual o numero primo entre 10 e 20?", opcoes: ["15", "17", "19", "21"], correta: 2, cat: 'matematica', dificuldade: 'medio' },
+    { pergunta: "Quantos segundos tem uma hora?", opcoes: ["3600", "360", "6000", "1800"], correta: 0, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Qual e a area de um quadrado de lado 5?", opcoes: ["20", "25", "10", "30"], correta: 1, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Qual e o resultado de 3 + 4 x 2?", opcoes: ["14", "11", "10", "12"], correta: 1, cat: 'matematica', dificuldade: 'medio' },
+    { pergunta: "Quantos zeros tem um milhao?", opcoes: ["5", "6", "7", "8"], correta: 1, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Qual e a derivada de x^2?", opcoes: ["x", "2x", "x^2", "2"], correta: 1, cat: 'matematica', dificuldade: 'dificil' },
+    { pergunta: "Qual e a raiz cubica de 27?", opcoes: ["2", "3", "4", "5"], correta: 1, cat: 'matematica', dificuldade: 'medio' },
+    { pergunta: "Quanto e 12 x 12?", opcoes: ["124", "134", "144", "154"], correta: 2, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Quanto e 5! (5 fatorial)?", opcoes: ["60", "120", "240", "25"], correta: 1, cat: 'matematica', dificuldade: 'medio' },
+    { pergunta: "Qual e o menor numero natural?", opcoes: ["-1", "0", "1", "2"], correta: 1, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Qual e o MDC de 12 e 18?", opcoes: ["3", "4", "6", "9"], correta: 2, cat: 'matematica', dificuldade: 'medio' },
+    { pergunta: "Em uma PA de razao 3, se o primeiro termo e 2, qual e o quinto termo?", opcoes: ["11", "14", "17", "20"], correta: 1, cat: 'matematica', dificuldade: 'dificil' },
+    { pergunta: "Quantos lados tem um dodecagono?", opcoes: ["10", "11", "12", "13"], correta: 2, cat: 'matematica', dificuldade: 'medio' },
+    { pergunta: "Qual o valor de x em 2x + 5 = 13?", opcoes: ["2", "3", "4", "5"], correta: 2, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Quanto e 25% de 80?", opcoes: ["15", "20", "25", "30"], correta: 1, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Quanto e 50 x 50?", opcoes: ["2000", "2250", "2500", "2750"], correta: 2, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Em um dado comum, quantas faces tem?", opcoes: ["4", "6", "8", "12"], correta: 1, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Qual e o volume de um cubo de aresta 3?", opcoes: ["9", "18", "27", "36"], correta: 2, cat: 'matematica', dificuldade: 'medio' },
+    { pergunta: "O que e um numero primo?", opcoes: ["Divisivel por 1 e ele mesmo", "Divisivel por 2", "Termina em 0", "Multiplo de 3"], correta: 0, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Qual e a formula da area de um circulo?", opcoes: ["2πr", "πr^2", "πd", "2πd"], correta: 1, cat: 'matematica', dificuldade: 'medio' },
+    { pergunta: "Quantos dias tem um ano bissexto?", opcoes: ["364", "365", "366", "367"], correta: 2, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Qual e a raiz quadrada de 169?", opcoes: ["12", "13", "14", "11"], correta: 1, cat: 'matematica', dificuldade: 'medio' },
+    { pergunta: "Em porcentagem, 1/4 equivale a?", opcoes: ["15%", "20%", "25%", "30%"], correta: 2, cat: 'matematica', dificuldade: 'facil' },
+    { pergunta: "Qual e o resultado de 8 / 2(2+2)?", opcoes: ["1", "16", "8", "4"], correta: 1, cat: 'matematica', dificuldade: 'dificil' },
+    { pergunta: "Quantos numeros naturais existem?", opcoes: ["100", "1000", "Infinitos", "1 milhao"], correta: 2, cat: 'matematica', dificuldade: 'facil' },
+];
+
+// ===== PERGUNTAS - GEOGRAFIA =====
+const perguntasGeografia = [
+    { pergunta: "Qual e a capital do Brasil?", opcoes: ["Rio de Janeiro", "Sao Paulo", "Brasilia", "Salvador"], correta: 2, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Qual e o maior oceano do mundo?", opcoes: ["Atlantico", "Indico", "Pacifico", "Artico"], correta: 2, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Quantos continentes existem?", opcoes: ["5", "6", "7", "8"], correta: 2, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Qual e o pais mais populoso do mundo?", opcoes: ["EUA", "India", "China", "Indonesia"], correta: 1, cat: 'geografia', dificuldade: 'medio' },
+    { pergunta: "Qual a capital da Franca?", opcoes: ["Londres", "Paris", "Berlim", "Madri"], correta: 1, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Em qual continente fica o Egito?", opcoes: ["Europa", "Asia", "Africa", "America"], correta: 2, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Qual e o maior pais do mundo em area?", opcoes: ["China", "Canada", "Russia", "EUA"], correta: 2, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Qual rio e o mais longo do mundo?", opcoes: ["Amazonas", "Nilo", "Mississippi", "Yangtze"], correta: 1, cat: 'geografia', dificuldade: 'medio' },
+    { pergunta: "Qual a capital do Japao?", opcoes: ["Quioto", "Toquio", "Osaka", "Yokohama"], correta: 1, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Qual deserto e o maior do mundo?", opcoes: ["Saara", "Gobi", "Antartida", "Kalahari"], correta: 2, cat: 'geografia', dificuldade: 'dificil' },
+    { pergunta: "Qual a capital da Argentina?", opcoes: ["Santiago", "Buenos Aires", "Lima", "Bogota"], correta: 1, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Qual e o menor pais do mundo?", opcoes: ["Monaco", "Vaticano", "San Marino", "Liechtenstein"], correta: 1, cat: 'geografia', dificuldade: 'medio' },
+    { pergunta: "A Cordilheira dos Andes fica em qual continente?", opcoes: ["Europa", "Asia", "Africa", "America do Sul"], correta: 3, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Qual e a capital da Australia?", opcoes: ["Sydney", "Melbourne", "Canberra", "Brisbane"], correta: 2, cat: 'geografia', dificuldade: 'medio' },
+    { pergunta: "Qual oceano banha a costa brasileira?", opcoes: ["Pacifico", "Atlantico", "Indico", "Artico"], correta: 1, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Em qual pais fica o Monte Everest?", opcoes: ["India", "Nepal", "China", "Paquistao"], correta: 1, cat: 'geografia', dificuldade: 'medio' },
+    { pergunta: "Qual e a capital de Portugal?", opcoes: ["Porto", "Lisboa", "Braga", "Coimbra"], correta: 1, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Qual e a maior floresta tropical do mundo?", opcoes: ["Congo", "Amazonia", "Borneo", "Daintree"], correta: 1, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Qual a capital do Canada?", opcoes: ["Toronto", "Vancouver", "Ottawa", "Montreal"], correta: 2, cat: 'geografia', dificuldade: 'medio' },
+    { pergunta: "Alemanha fica em qual continente?", opcoes: ["Asia", "Europa", "America", "Africa"], correta: 1, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Qual pais tem o formato de uma bota?", opcoes: ["Espanha", "Grecia", "Italia", "Portugal"], correta: 2, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Cidade conhecida como 'Cidade Luz'?", opcoes: ["Roma", "Paris", "Londres", "Nova York"], correta: 1, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Qual a capital da Russia?", opcoes: ["Sao Petersburgo", "Moscou", "Vladivostok", "Kiev"], correta: 1, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Pais que ocupa a maior parte da Peninsula Iberica?", opcoes: ["Portugal", "Espanha", "Franca", "Andorra"], correta: 1, cat: 'geografia', dificuldade: 'medio' },
+    { pergunta: "Cordilheira mais longa do mundo?", opcoes: ["Himalaia", "Andes", "Alpes", "Montanhas Rochosas"], correta: 1, cat: 'geografia', dificuldade: 'medio' },
+    { pergunta: "Qual a capital do Mexico?", opcoes: ["Cancun", "Guadalajara", "Cidade do Mexico", "Monterrey"], correta: 2, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Quantos fusos horarios tem o Brasil?", opcoes: ["2", "3", "4", "5"], correta: 2, cat: 'geografia', dificuldade: 'medio' },
+    { pergunta: "Qual pais e conhecido como 'Terra do Sol Nascente'?", opcoes: ["Coreia", "China", "Japao", "Tailandia"], correta: 2, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Qual e o ponto mais alto do Brasil?", opcoes: ["Pico da Neblina", "Pico da Bandeira", "Monte Roraima", "Pico Paranagua"], correta: 0, cat: 'geografia', dificuldade: 'medio' },
+    { pergunta: "Mar Mediterraneo separa quais continentes?", opcoes: ["Europa e Asia", "Europa e Africa", "Africa e Asia", "America e Europa"], correta: 1, cat: 'geografia', dificuldade: 'facil' },
+    { pergunta: "Qual e a capital da Irlanda?", opcoes: ["Belfast", "Dublin", "Cork", "Galway"], correta: 1, cat: 'geografia', dificuldade: 'medio' },
+];
+
+// ===== PERGUNTAS - CIENCIAS =====
+const perguntasCiencias = [
+    { pergunta: "Qual e o simbolo quimico da agua?", opcoes: ["H2O", "CO2", "NaCl", "O2"], correta: 0, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Quantos ossos tem o corpo humano adulto?", opcoes: ["196", "206", "216", "226"], correta: 1, cat: 'ciencias', dificuldade: 'medio' },
+    { pergunta: "Qual planeta e conhecido como 'Planeta Vermelho'?", opcoes: ["Venus", "Marte", "Jupiter", "Saturno"], correta: 1, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Qual o maior orgao do corpo humano?", opcoes: ["Figado", "Coracao", "Pele", "Cerebro"], correta: 2, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Qual e o elemento mais abundante no universo?", opcoes: ["Oxigenio", "Hidrogenio", "Carbono", "Helio"], correta: 1, cat: 'ciencias', dificuldade: 'medio' },
+    { pergunta: "O que as plantas produzem na fotossintese?", opcoes: ["CO2", "Oxigenio", "Nitrogenio", "Hidrogenio"], correta: 1, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Qual a velocidade da luz (aproximada)?", opcoes: ["300.000 km/s", "150.000 km/s", "500.000 km/s", "100.000 km/s"], correta: 0, cat: 'ciencias', dificuldade: 'medio' },
+    { pergunta: "Qual e a unidade basica da vida?", opcoes: ["Atomo", "Celula", "DNA", "Proteina"], correta: 1, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Quantos planetas tem o sistema solar?", opcoes: ["7", "8", "9", "10"], correta: 1, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Qual e a formula quimica do dioxido de carbono?", opcoes: ["CO", "CO2", "C2O", "C2O2"], correta: 1, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "O DNA tem formato de?", opcoes: ["Helice dupla", "Circulo", "Triangulo", "Linha reta"], correta: 0, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Qual o ph da agua pura?", opcoes: ["5", "6", "7", "8"], correta: 2, cat: 'ciencias', dificuldade: 'medio' },
+    { pergunta: "Qual animal e o mais rapido do mundo?", opcoes: ["Guepardo", "Falcao peregrino", "Cavalo", "Gazela"], correta: 1, cat: 'ciencias', dificuldade: 'medio' },
+    { pergunta: "Quanto tempo a luz do Sol leva para chegar a Terra?", opcoes: ["8 minutos", "15 minutos", "1 hora", "5 minutos"], correta: 0, cat: 'ciencias', dificuldade: 'medio' },
+    { pergunta: "Qual cientista propos a teoria da relatividade?", opcoes: ["Newton", "Einstein", "Galileu", "Darwin"], correta: 1, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Quantos dentes tem um adulto normal?", opcoes: ["28", "30", "32", "34"], correta: 2, cat: 'ciencias', dificuldade: 'medio' },
+    { pergunta: "O que a hemoglobina transporta no sangue?", opcoes: ["CO2", "Oxigenio", "Nutrientes", "Hormonios"], correta: 1, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Qual e o maior planeta do sistema solar?", opcoes: ["Saturno", "Jupiter", "Netuno", "Urano"], correta: 1, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Quantos cromossomos tem o ser humano?", opcoes: ["23", "44", "46", "48"], correta: 2, cat: 'ciencias', dificuldade: 'medio' },
+    { pergunta: "Agua ferve a quantos graus Celsius?", opcoes: ["90", "100", "110", "120"], correta: 1, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Qual e o menor osso do corpo humano?", opcoes: ["Falange", "Estribo", "Martelo", "Bigorna"], correta: 1, cat: 'ciencias', dificuldade: 'dificil' },
+    { pergunta: "Baleias sao:", opcoes: ["Peixes", "Mamiferos", "Repteis", "Anfibios"], correta: 1, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Qual vitamina e produzida pela exposicao ao sol?", opcoes: ["Vitamina A", "Vitamina B", "Vitamina C", "Vitamina D"], correta: 3, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Qual e o segundo planeta mais proximo do Sol?", opcoes: ["Mercurio", "Venus", "Terra", "Marte"], correta: 1, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "O DNA fica localizado onde na celula?", opcoes: ["Membrana", "Citoplasma", "Nucleo", "Ribossomo"], correta: 2, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "O que sao virus?", opcoes: ["Celulas", "Parasitas intracelulares", "Bacterias", "Fungos"], correta: 1, cat: 'ciencias', dificuldade: 'medio' },
+    { pergunta: "Quantos litros de sangue o corpo humano adulto tem?", opcoes: ["2-3", "4-6", "7-9", "10-12"], correta: 1, cat: 'ciencias', dificuldade: 'medio' },
+    { pergunta: "Qual e a formula da forca (segunda lei de Newton)?", opcoes: ["F = m/v", "F = m * a", "F = m * v", "F = a / m"], correta: 1, cat: 'ciencias', dificuldade: 'medio' },
+    { pergunta: "Qual cientista criou a teoria da evolucao?", opcoes: ["Lamarck", "Darwin", "Mendel", "Wallace"], correta: 1, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "O coracao humano tem quantas camaras?", opcoes: ["2", "3", "4", "5"], correta: 2, cat: 'ciencias', dificuldade: 'facil' },
+    { pergunta: "Qual e a temperatura do nucleo da Terra?", opcoes: ["Cerca de 3000°C", "Cerca de 5500°C", "Cerca de 8000°C", "Cerca de 10000°C"], correta: 1, cat: 'ciencias', dificuldade: 'dificil' },
+];
+
+// ===== PERGUNTAS - HISTORIA =====
+const perguntasHistoria = [
+    { pergunta: "Em que ano o Brasil foi descoberto?", opcoes: ["1498", "1500", "1502", "1492"], correta: 1, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "Quem foi o primeiro presidente do Brasil?", opcoes: ["Getulio Vargas", "Deodoro da Fonseca", "Dom Pedro I", "Prudente de Morais"], correta: 1, cat: 'historia', dificuldade: 'medio' },
+    { pergunta: "Em que ano terminou a Segunda Guerra Mundial?", opcoes: ["1943", "1944", "1945", "1946"], correta: 2, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "Quem pintou a Mona Lisa?", opcoes: ["Michelangelo", "Leonardo da Vinci", "Rafael", "Donatello"], correta: 1, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "Em que ano o homem pisou na Lua pela primeira vez?", opcoes: ["1967", "1968", "1969", "1970"], correta: 2, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "Quem foi o primeiro imperador do Brasil?", opcoes: ["Dom Joao VI", "Dom Pedro I", "Dom Pedro II", "Dom Miguel"], correta: 1, cat: 'historia', dificuldade: 'medio' },
+    { pergunta: "Queda do Muro de Berlim ocorreu em que ano?", opcoes: ["1987", "1988", "1989", "1990"], correta: 2, cat: 'historia', dificuldade: 'medio' },
+    { pergunta: "Quem foi o principal lider da independencia da India?", opcoes: ["Gandhi", "Nehru", "Tilak", "Bose"], correta: 0, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "A Revolucao Francesa comecou em que ano?", opcoes: ["1776", "1789", "1799", "1804"], correta: 1, cat: 'historia', dificuldade: 'medio' },
+    { pergunta: "Quem descobriu a America em 1492?", opcoes: ["Vasco da Gama", "Pedro Alvares Cabral", "Cristovao Colombo", "Fernao de Magalhaes"], correta: 2, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "Imperio Romano do Ocidente caiu em que ano?", opcoes: ["376", "476", "576", "676"], correta: 1, cat: 'historia', dificuldade: 'dificil' },
+    { pergunta: "Qual guerra foi travada entre 1914 e 1918?", opcoes: ["Guerra Fria", "Primeira Guerra Mundial", "Segunda Guerra Mundial", "Guerra do Vietnam"], correta: 1, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "O Titanic afundou em qual ano?", opcoes: ["1910", "1911", "1912", "1913"], correta: 2, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "Quem foi o primeiro homem a viajar ao espaco?", opcoes: ["Neil Armstrong", "Yuri Gagarin", "Buzz Aldrin", "John Glenn"], correta: 1, cat: 'historia', dificuldade: 'medio' },
+    { pergunta: "Qual pais foi o primeiro a dar direito de voto as mulheres?", opcoes: ["EUA", "Reino Unido", "Nova Zelandia", "Franca"], correta: 2, cat: 'historia', dificuldade: 'dificil' },
+    { pergunta: "Em que ano o Brasil se tornou uma republica?", opcoes: ["1888", "1889", "1890", "1891"], correta: 1, cat: 'historia', dificuldade: 'medio' },
+    { pergunta: "A Guerra Fria foi um conflito entre quais paises?", opcoes: ["EUA e China", "EUA e URSS", "Russia e Alemanha", "Reino Unido e Franca"], correta: 1, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "Quem foi o farao mais conhecido do Egito?", opcoes: ["Tutancamon", "Ramsés II", "Cleopatra", "Akhenaton"], correta: 0, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "Qual batalha foi decisiva para a independencia do Brasil?", opcoes: ["Batalha de Guararapes", "Grito do Ipiranga", "Batalha do Jenipapo", "Batalha de Pirajá"], correta: 1, cat: 'historia', dificuldade: 'medio' },
+    { pergunta: "Tratado que dividiu o mundo entre Portugal e Espanha?", opcoes: ["Tratado de Paris", "Tratado de Tordesilhas", "Tratado de Versalhes", "Tratado de Madri"], correta: 1, cat: 'historia', dificuldade: 'medio' },
+    { pergunta: "Quem foi o presidente do Brasil durante a Segunda Guerra?", opcoes: ["Getulio Vargas", "Eurico Gaspar Dutra", "Washington Luis", "Julio Prestes"], correta: 0, cat: 'historia', dificuldade: 'medio' },
+    { pergunta: "O que foi o 'Apartheid' na Africa do Sul?", opcoes: ["Regime de segregacao racial", "Guerra civil", "Movimento de independencia", "Tratado de paz"], correta: 0, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "O Muro de Berlim separava quais Alemanhas?", opcoes: ["Alemanha Ocidental e Oriental", "Alemanha do Norte e Sul", "Alemanha e Franca", "Alemanha e Polonia"], correta: 0, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "Quem foi Napoleao Bonaparte?", opcoes: ["Rei da Franca", "Lider militar e imperador frances", "Papa", "Cientista frances"], correta: 1, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "Em que ano a escravidao foi abolida no Brasil?", opcoes: ["1886", "1888", "1890", "1892"], correta: 1, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "Povo que construiu Machu Picchu?", opcoes: ["Maias", "Astecas", "Incas", "Tupi-Guarani"], correta: 2, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "Quem foi o primeiro presidente dos EUA?", opcoes: ["Thomas Jefferson", "George Washington", "Abraham Lincoln", "John Adams"], correta: 1, cat: 'historia', dificuldade: 'facil' },
+    { pergunta: "Ano da queda do Imperio Romano do Ocidente?", opcoes: ["376", "476", "576", "676"], correta: 1, cat: 'historia', dificuldade: 'dificil' },
+];
+
+// ===== PERGUNTAS - ESPORTES =====
+const perguntasEsportes = [
+    { pergunta: "Qual pais tem mais titulos de Copa do Mundo de Futebol?", opcoes: ["Alemanha", "Italia", "Brasil", "Argentina"], correta: 2, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Quantos jogadores tem um time de futebol?", opcoes: ["7", "9", "11", "13"], correta: 2, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Em que esporte LeBron James se destacou?", opcoes: ["Futebol", "Basquete", "Basebol", "Futebol Americano"], correta: 1, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Qual pais sediou as Olimpiadas de 2016?", opcoes: ["Reino Unido", "China", "Brasil", "Russia"], correta: 2, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Qual e o esporte mais popular do mundo?", opcoes: ["Futebol", "Basquete", "Criquete", "Tênis"], correta: 0, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Onde foi realizada a primeira Copa do Mundo de Futebol?", opcoes: ["Brasil", "Uruguai", "Italia", "Franca"], correta: 1, cat: 'esportes', dificuldade: 'medio' },
+    { pergunta: "Qual jogador detem o recorde de mais gols em Copas do Mundo?", opcoes: ["Messi", "Cristiano Ronaldo", "Klose", "Pelé"], correta: 2, cat: 'esportes', dificuldade: 'medio' },
+    { pergunta: "Em qual esporte se usa uma raquete e uma peteca?", opcoes: ["Tênis", "Badminton", "Squash", "Volei"], correta: 1, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Qual pais tem o maior numero de medalhas olimpicas da historia?", opcoes: ["China", "Russia", "EUA", "Alemanha"], correta: 2, cat: 'esportes', dificuldade: 'medio' },
+    { pergunta: "Quantas substituicoes sao permitidas no futebol profissional?", opcoes: ["2", "3", "4", "5"], correta: 3, cat: 'esportes', dificuldade: 'medio' },
+    { pergunta: "Qual tenista tem mais titulos de Grand Slam?", opcoes: ["Federer", "Nadal", "Djokovic", "Sampras"], correta: 2, cat: 'esportes', dificuldade: 'medio' },
+    { pergunta: "O UFC e um evento de qual esporte?", opcoes: ["Boxe", "MMA", "Kickboxing", "Jiu-Jitsu"], correta: 1, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Qual cor e a camisa do lider do Tour de France?", opcoes: ["Azul", "Verde", "Amarela", "Vermelha"], correta: 2, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Quantos pontos vale uma cesta de tres no basquete?", opcoes: ["1", "2", "3", "4"], correta: 2, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Em que ano o Brasil ganhou a primeira Copa do Mundo?", opcoes: ["1954", "1958", "1962", "1970"], correta: 1, cat: 'esportes', dificuldade: 'medio' },
+    { pergunta: "Qual pais ganhou a Copa do Mundo de 2018?", opcoes: ["Alemanha", "Brasil", "Franca", "Argentina"], correta: 2, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Qual jogador de futebol tem mais Bolas de Ouro?", opcoes: ["Cristiano Ronaldo", "Messi", "Neymar", "Ronaldo Fenomeno"], correta: 1, cat: 'esportes', dificuldade: 'medio' },
+    { pergunta: "O Super Bowl e a final de qual esporte?", opcoes: ["Futebol", "Futebol Americano", "Basebol", "Basquete"], correta: 1, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Qual pais sediou as Olimpiadas de 2020 (realizada em 2021)?", opcoes: ["China", "Japao", "Coreia do Sul", "Reino Unido"], correta: 1, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Quantos sets sao necessarios para vencer em uma partida de volei?", opcoes: ["2", "3", "4", "5"], correta: 1, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Qual o nome do piloto brasileiro campeao mundial de Formula 1?", opcoes: ["Felipe Massa", "Ayrton Senna", "Nelson Piquet", "Rubens Barrichello"], correta: 1, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Qual time brasileiro tem mais titulos mundiais de clubes?", opcoes: ["Flamengo", "Santos", "Sao Paulo", "Corinthians"], correta: 2, cat: 'esportes', dificuldade: 'medio' },
+    { pergunta: "Esporte que combina natação, ciclismo e corrida?", opcoes: ["Decatlo", "Triatlo", "Pentatlo", "Heptatlo"], correta: 1, cat: 'esportes', dificuldade: 'facil' },
+    { pergunta: "Quantas faltas um jogador de basquete pode cometer antes de ser eliminado?", opcoes: ["4", "5", "6", "7"], correta: 1, cat: 'esportes', dificuldade: 'dificil' },
+];
+
+// ===== PERGUNTAS - MUSICA =====
+const perguntasMusica = [
+    { pergunta: "Qual banda cantou 'Bohemian Rhapsody'?", opcoes: ["The Beatles", "Queen", "Led Zeppelin", "Pink Floyd"], correta: 1, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Qual instrumento tem 88 teclas?", opcoes: ["Violao", "Piano", "Orgao", "Harpa"], correta: 1, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Cantor conhecido como 'Rei do Pop'?", opcoes: ["Prince", "Michael Jackson", "Elvis Presley", "Madonna"], correta: 1, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Quantas cordas tem um violao classico?", opcoes: ["4", "5", "6", "7"], correta: 2, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Cantora brasileira conhecida como 'Rainha do Rock'?", opcoes: ["Elis Regina", "Rita Lee", "Gal Costa", "Maria Bethânia"], correta: 1, cat: 'musica', dificuldade: 'medio' },
+    { pergunta: "Que pais de originou o samba?", opcoes: ["Portugal", "Brasil", "Angola", "Cuba"], correta: 1, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Banda britanica liderada por Freddie Mercury?", opcoes: ["The Rolling Stones", "Queen", "The Who", "The Kinks"], correta: 1, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Compositor classico conhecido como 'O Menino Prodígio'?", opcoes: ["Bach", "Mozart", "Beethoven", "Chopin"], correta: 1, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Cantor brasileiro conhecido como 'Rei'?", opcoes: ["Roberto Carlos", "Caetano Veloso", "Gilberto Gil", "Milton Nascimento"], correta: 0, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "O genero musical 'Rock' surgiu em qual decada?", opcoes: ["1940", "1950", "1960", "1970"], correta: 1, cat: 'musica', dificuldade: 'medio' },
+    { pergunta: "Instrumento tipico do Hawaii?", opcoes: ["Banjo", "Ukulele", "Cavaquinho", "Bandolim"], correta: 1, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Cantor de 'Thriller'?", opcoes: ["Prince", "Michael Jackson", "Stevie Wonder", "Lionel Richie"], correta: 1, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Quantas sinfonias Beethoven compôs?", opcoes: ["7", "8", "9", "10"], correta: 2, cat: 'musica', dificuldade: 'medio' },
+    { pergunta: "Cantor de 'Imagine'?", opcoes: ["John Lennon", "Paul McCartney", "Bob Dylan", "David Bowie"], correta: 0, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Tom Jobim e conhecido por criar qual genero musical?", opcoes: ["Samba", "Bossa Nova", "MPB", "Choro"], correta: 1, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Qual banda tem o album 'The Dark Side of the Moon'?", opcoes: ["Pink Floyd", "Led Zeppelin", "Yes", "Genesis"], correta: 0, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Nome do festival brasileiro de musica que ocorre em Janeiro?", opcoes: ["Lollapalooza", "Rock in Rio", "Festival de Verao", "SWU"], correta: 1, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Cantor de 'Billie Jean'?", opcoes: ["Prince", "Michael Jackson", "Usher", "Justin Timberlake"], correta: 1, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Qual e o instrumento favorito de Jimi Hendrix?", opcoes: ["Baixo", "Guitarra", "Teclado", "Bateria"], correta: 1, cat: 'musica', dificuldade: 'facil' },
+    { pergunta: "Estilo musical com origem em Nova Orleans?", opcoes: ["Rock", "Jazz", "Blues", "Country"], correta: 1, cat: 'musica', dificuldade: 'medio' },
+];
+
+// ===== PERGUNTAS - TECNOLOGIA =====
+const perguntasTecnologia = [
+    { pergunta: "O que significa a sigla 'CPU'?", opcoes: ["Central Process Unit", "Central Processing Unit", "Computer Personal Unit", "Core Process Unit"], correta: 1, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "Qual empresa criou o sistema Android?", opcoes: ["Apple", "Microsoft", "Google", "Samsung"], correta: 2, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "O que significa 'HTML'?", opcoes: ["HyperText Markup Language", "High Tech Modern Language", "Home Tool Markup Language", "Hyper Transfer Markup Language"], correta: 0, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "Qual e a linguagem de programacao mais usada para web?", opcoes: ["Python", "Java", "JavaScript", "C++"], correta: 2, cat: 'tecnologia', dificuldade: 'medio' },
+    { pergunta: "O que e um 'byte'?", opcoes: ["1 bit", "8 bits", "16 bits", "32 bits"], correta: 1, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "Empresa criadora do Windows?", opcoes: ["Apple", "Microsoft", "Google", "IBM"], correta: 1, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "O que significa 'www'?", opcoes: ["World Wide Web", "World Web Wide", "Web Wide World", "World Wide Work"], correta: 0, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "Qual o maior sistema operacional para servidores?", opcoes: ["Windows", "macOS", "Linux", "Android"], correta: 2, cat: 'tecnologia', dificuldade: 'medio' },
+    { pergunta: "O que e 'RAM'?", opcoes: ["Memoria permanente", "Memoria de acesso aleatorio", "Processador", "Disco rigido"], correta: 1, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "Ano de lancamento do primeiro iPhone?", opcoes: ["2005", "2006", "2007", "2008"], correta: 2, cat: 'tecnologia', dificuldade: 'medio' },
+    { pergunta: "Qual e o maior site de busca do mundo?", opcoes: ["Bing", "Google", "Yahoo", "DuckDuckGo"], correta: 1, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "O que e 'URL'?", opcoes: ["Endereco da internet", "Protocolo de rede", "Linguagem de programacao", "Sistema operacional"], correta: 0, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "O que e 'Python'?", opcoes: ["Linguagem de programacao", "Site de busca", "Sistema operacional", "Navegador"], correta: 0, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "Qual e a resolucao Full HD?", opcoes: ["1280x720", "1920x1080", "2560x1440", "3840x2160"], correta: 1, cat: 'tecnologia', dificuldade: 'medio' },
+    { pergunta: "Nome do navegador da Google?", opcoes: ["Safari", "Firefox", "Chrome", "Edge"], correta: 2, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "O que significa 'USB'?", opcoes: ["Universal Serial Bus", "United Serial Bus", "Universal System Bus", "Unified Serial Board"], correta: 0, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "O que e 'The Cloud' (nuvem)?", opcoes: ["Servidores remotos", "Internet", "Disco rigido externo", "Rede local"], correta: 0, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "Qual criptomoeda foi a primeira criada?", opcoes: ["Ethereum", "Bitcoin", "Litecoin", "Dogecoin"], correta: 1, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "O que e 'Bluetooth'?", opcoes: ["Protocolo de comunicacao sem fio", "Padrao de video", "Tipo de bateria", "Conector USB"], correta: 0, cat: 'tecnologia', dificuldade: 'facil' },
+    { pergunta: "O que significa 'SSD'?", opcoes: ["Solid State Drive", "Super Speed Disk", "System Storage Device", "Silicon Storage Drive"], correta: 0, cat: 'tecnologia', dificuldade: 'facil' },
+];
+
+// ===== PERGUNTAS - ANIMES =====
+const perguntasAnimes = [
+    { pergunta: "Qual anime tem o protagonista chamado 'Naruto Uzumaki'?", opcoes: ["One Piece", "Naruto", "Bleach", "Dragon Ball"], correta: 1, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Em 'Dragon Ball', qual e o nome do Sayajin lendario?", opcoes: ["Goku", "Vegeta", "Broly", "Gohan"], correta: 2, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Qual e o nome do protagonista de 'One Piece'?", opcoes: ["Zoro", "Luffy", "Sanji", "Nami"], correta: 1, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Estudio famoso por filmes como 'A Viagem de Chihiro'?", opcoes: ["Toei", "Madhouse", "Ghibli", "Kyoto Animation"], correta: 2, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Em 'Attack on Titan', qual o nome do protagonista?", opcoes: ["Levi", "Eren", "Mikasa", "Armin"], correta: 1, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Qual anime apresenta o personagem 'Saitama'?", opcoes: ["One Punch Man", "Mob Psycho 100", "Dragon Ball", "Naruto"], correta: 0, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Em 'Pokemon', qual e o nome do protagonista?", opcoes: ["Ash", "Red", "Gary", "Brock"], correta: 0, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Qual anime tem 'Gojo Satoru' e 'Yuji Itadori'?", opcoes: ["Demon Slayer", "Jujutsu Kaisen", "Attack on Titan", "My Hero Academia"], correta: 1, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Em 'Demon Slayer', qual o nome do protagonista?", opcoes: ["Tanjiro", "Zenitsu", "Inosuke", "Nezuko"], correta: 0, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Anime que apresenta o 'Exame Hunter'?", opcoes: ["Hunter x Hunter", "Black Clover", "Fairy Tail", "Sword Art Online"], correta: 0, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Qual anime e sobre alquimia?", opcoes: ["Fullmetal Alchemist", "Attack on Titan", "Steins;Gate", "Vinland Saga"], correta: 0, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Em 'Death Note', qual o nome do Shinigami principal?", opcoes: ["Ryuk", "Rem", "Sidoh", "Gelus"], correta: 0, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Qual e o protagonista de 'Sword Art Online'?", opcoes: ["Kirito", "Asuna", "Yui", "Klein"], correta: 0, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Em 'My Hero Academia', qual e o nome do protagonista?", opcoes: ["Bakugo", "Midoriya", "Todoroki", "All Might"], correta: 1, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Qual o nome do protagonista de 'Cowboy Bebop'?", opcoes: ["Spike Spiegel", "Jet Black", "Vicious", "Laughing Bull"], correta: 0, cat: 'animes', dificuldade: 'medio' },
+    { pergunta: "Em 'Neon Genesis Evangelion', qual e o nome do protagonista?", opcoes: ["Kaworu", "Shinji", "Rei", "Asuka"], correta: 1, cat: 'animes', dificuldade: 'medio' },
+    { pergunta: "Protagonista de 'Tokyo Ghoul'?", opcoes: ["Touka", "Kaneki", "Hide", "Amon"], correta: 1, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Anime onde o protagonista encontra um livro que mata pessoas?", opcoes: ["Death Note", "Future Diary", "Another", "Corpse Party"], correta: 0, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "A organizacao 'Akatsuki' aparece em qual anime?", opcoes: ["Naruto", "One Piece", "Bleach", "Dragon Ball"], correta: 0, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Nome do protagonista de 'Bleach'?", opcoes: ["Rukia", "Ichigo", "Renji", "Byakuya"], correta: 1, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Qual anime mostra uma guerra entre humanos e titãs?", opcoes: ["Attack on Titan", "Seraph of the End", "Kabaneri", "God of War"], correta: 0, cat: 'animes', dificuldade: 'facil' },
+    { pergunta: "Em 'Code Geass', qual o poder de Lelouch?", opcoes: ["Geass", "Stand", "Nen", "Chakra"], correta: 0, cat: 'animes', dificuldade: 'medio' },
+    { pergunta: "Nome do protagonista de 'Vinland Saga'?", opcoes: ["Thorfinn", "Askeladd", "Canute", "Thor"], correta: 0, cat: 'animes', dificuldade: 'medio' },
+    { pergunta: "Em 'Steins;Gate', como se chama o protagonista?", opcoes: ["Okabe Rintaro", "Daru", "Mayuri", "Kurisu"], correta: 0, cat: 'animes', dificuldade: 'medio' },
+    { pergunta: "Qual e o maior anime em numero de episodios?", opcoes: ["One Piece", "Naruto", "Dragon Ball", "Sazae-san"], correta: 3, cat: 'animes', dificuldade: 'dificil' },
+];
+
+// ===== PERGUNTAS - LITERATURA =====
+const perguntasLiteratura = [
+    { pergunta: "Quem escreveu 'Dom Casmurro'?", opcoes: ["Jose de Alencar", "Machado de Assis", "Clarice Lispector", "Graciliano Ramos"], correta: 1, cat: 'literatura', dificuldade: 'medio' },
+    { pergunta: "Autor de 'O Pequeno Principe'?", opcoes: ["Victor Hugo", "Antoine de Saint-Exupery", "Jules Verne", "Mark Twain"], correta: 1, cat: 'literatura', dificuldade: 'facil' },
+    { pergunta: "Obra mais famosa de Shakespeare?", opcoes: ["Hamlet", "Macbeth", "Romeu e Julieta", "Otelo"], correta: 2, cat: 'literatura', dificuldade: 'facil' },
+    { pergunta: "Quem escreveu '1984'?", opcoes: ["Aldous Huxley", "George Orwell", "Ray Bradbury", "H.G. Wells"], correta: 1, cat: 'literatura', dificuldade: 'medio' },
+    { pergunta: "Autor de 'O Alquimista'?", opcoes: ["Paulo Coelho", "Jorge Amado", "Erico Verissimo", "Machado de Assis"], correta: 0, cat: 'literatura', dificuldade: 'facil' },
+    { pergunta: "A Divina Comedia foi escrita por quem?", opcoes: ["Petrarca", "Boccaccio", "Dante Alighieri", "Homero"], correta: 2, cat: 'literatura', dificuldade: 'medio' },
+    { pergunta: "Autor de 'O Senhor dos Aneis'?", opcoes: ["C.S. Lewis", "J.R.R. Tolkien", "J.K. Rowling", "George R.R. Martin"], correta: 1, cat: 'literatura', dificuldade: 'facil' },
+    { pergunta: "Nome do personagem principal de 'Dom Quixote'?", opcoes: ["Sancho Pança", "Quixote", "Alonso", "Dulcineia"], correta: 1, cat: 'literatura', dificuldade: 'facil' },
+    { pergunta: "Quem escreveu 'Os Lusiadas'?", opcoes: ["Camões", "Fernando Pessoa", "Eca de Queiros", "Gil Vicente"], correta: 0, cat: 'literatura', dificuldade: 'medio' },
+    { pergunta: "Autora de 'Harry Potter'?", opcoes: ["J.K. Rowling", "Stephenie Meyer", "Suzanne Collins", "Veronica Roth"], correta: 0, cat: 'literatura', dificuldade: 'facil' },
+    { pergunta: "Escritor brasileiro famoso por 'Capitaes da Areia'?", opcoes: ["Jorge Amado", "Machado de Assis", "Graciliano Ramos", "Erico Verissimo"], correta: 0, cat: 'literatura', dificuldade: 'medio' },
+    { pergunta: "O livro 'Moby Dick' e sobre o que?", opcoes: ["Uma baleia", "Um navio", "Um marinheiro", "Um porto"], correta: 0, cat: 'literatura', dificuldade: 'facil' },
+    { pergunta: "Autora de 'A Hora da Estrela'?", opcoes: ["Clarice Lispector", "Cecilia Meireles", "Adelia Prado", "Cora Coralina"], correta: 0, cat: 'literatura', dificuldade: 'dificil' },
+    { pergunta: "Classico da literatura universal escrito por Homero?", opcoes: ["Odisseia", "Eneida", "Divina Comedia", "Os Lusiadas"], correta: 0, cat: 'literatura', dificuldade: 'medio' },
+    { pergunta: "Livro mais vendido da historia (excluindo religiosos)?", opcoes: ["Dom Quixote", "Um Conto de Duas Cidades", "O Pequeno Principe", "O Alquimista"], correta: 1, cat: 'literatura', dificuldade: 'dificil' },
+    { pergunta: "Quem escreveu 'Grande Sertao: Veredas'?", opcoes: ["Guimaraes Rosa", "Graciliano Ramos", "Jorge Amado", "Rachel de Queiroz"], correta: 0, cat: 'literatura', dificuldade: 'dificil' },
+    { pergunta: "O poeta brasileiro autor de 'Quadrilha'?", opcoes: ["Carlos Drummond de Andrade", "Manuel Bandeira", "Vinicius de Moraes", "Joao Cabral de Melo Neto"], correta: 0, cat: 'literatura', dificuldade: 'dificil' },
+];
+
+// ===== PERGUNTAS - ARTE =====
+const perguntasArte = [
+    { pergunta: "Quem pintou 'O Grito'?", opcoes: ["Van Gogh", "Munch", "Picasso", "Da Vinci"], correta: 1, cat: 'arte', dificuldade: 'medio' },
+    { pergunta: "Estilo artistico de Picasso?", opcoes: ["Impressionismo", "Cubismo", "Surrealismo", "Expressionismo"], correta: 1, cat: 'arte', dificuldade: 'medio' },
+    { pergunta: "Obra mais famosa de Michelangelo?", opcoes: ["Mona Lisa", "Davide", "O Nascimento de Venus", "A Ultima Ceia"], correta: 1, cat: 'arte', dificuldade: 'facil' },
+    { pergunta: "Quem pintou 'A Noite Estrelada'?", opcoes: ["Monet", "Van Gogh", "Cezanne", "Gauguin"], correta: 1, cat: 'arte', dificuldade: 'facil' },
+    { pergunta: "Qual e o museu mais famoso de Paris?", opcoes: ["Museu de Orsay", "Louvre", "Centro Pompidou", "Museu Rodin"], correta: 1, cat: 'arte', dificuldade: 'facil' },
+    { pergunta: "Escultor de 'O Pensador'?", opcoes: ["Michelangelo", "Rodin", "Donatello", "Bernini"], correta: 1, cat: 'arte', dificuldade: 'medio' },
+    { pergunta: "Quem pintou 'A Persistencia da Memoria'?", opcoes: ["Picasso", "Dali", "Magritte", "Miro"], correta: 1, cat: 'arte', dificuldade: 'facil' },
+    { pergunta: "O 'MASP' e um museu localizado em qual cidade?", opcoes: ["Rio de Janeiro", "Brasilia", "Sao Paulo", "Salvador"], correta: 2, cat: 'arte', dificuldade: 'facil' },
+    { pergunta: "Movimento artistico brasileiro de 1922?", opcoes: ["Semana de Arte Moderna", "Barroco", "Arcadianismo", "Romantismo"], correta: 0, cat: 'arte', dificuldade: 'medio' },
+    { pergunta: "Quem pintou 'A Ultima Ceia'?", opcoes: ["Michelangelo", "Da Vinci", "Rafael", "Ticiano"], correta: 1, cat: 'arte', dificuldade: 'facil' },
+    { pergunta: "Artista conhecido por suas latas de sopa Campbell?", opcoes: ["Andy Warhol", "Roy Lichtenstein", "Jasper Johns", "Robert Rauschenberg"], correta: 0, cat: 'arte', dificuldade: 'medio' },
+    { pergunta: "Artista brasileira autora do 'Abaporu'?", opcoes: ["Portinari", "Tarsila do Amaral", "Anita Malfatti", "Di Cavalcanti"], correta: 1, cat: 'arte', dificuldade: 'dificil' },
+    { pergunta: "O 'Vaticano' abriga qual famosa capela?", opcoes: ["Capela Sistina", "Capela de Onze Mil Virgens", "Capela Palatina", "Capela Scrovegni"], correta: 0, cat: 'arte', dificuldade: 'medio' },
+    { pergunta: "Qual artista pintava bailarinas?", opcoes: ["Monet", "Degas", "Renoir", "Manet"], correta: 1, cat: 'arte', dificuldade: 'dificil' },
+    { pergunta: "Qual movimento artistico Dali pertencia?", opcoes: ["Cubismo", "Surrealismo", "Dadaismo", "Futurismo"], correta: 1, cat: 'arte', dificuldade: 'medio' },
+];
+
+// ===== PERGUNTAS - CURIOSIDADES =====
+const perguntasCuriosidades = [
+    { pergunta: "Quantos continentes existem no mundo?", opcoes: ["5", "6", "7", "8"], correta: 2, cat: 'curiosidades', dificuldade: 'facil' },
+    { pergunta: "Qual e o maior animal do mundo?", opcoes: ["Elefante", "Baleia Azul", "Girafa", "Tubarao Baleia"], correta: 1, cat: 'curiosidades', dificuldade: 'facil' },
+    { pergunta: "Qual a cor mais rara na natureza?", opcoes: ["Vermelho", "Azul", "Verde", "Amarelo"], correta: 1, cat: 'curiosidades', dificuldade: 'dificil' },
+    { pergunta: "Qual e o pais mais antigo do mundo?", opcoes: ["Grecia", "Egito", "Japao", "China"], correta: 1, cat: 'curiosidades', dificuldade: 'medio' },
+    { pergunta: "Cidade mais populosa do mundo?", opcoes: ["Toquio", "Xangai", "Nova York", "Mumbai"], correta: 0, cat: 'curiosidades', dificuldade: 'medio' },
+    { pergunta: "Quantas linguas existem no mundo?", opcoes: ["Cerca de 2000", "Cerca de 4000", "Cerca de 7000", "Cerca de 10000"], correta: 2, cat: 'curiosidades', dificuldade: 'dificil' },
+    { pergunta: "Animal conhecido como 'o rei da selva'?", opcoes: ["Tigre", "Leao", "Urso", "Lobo"], correta: 1, cat: 'curiosidades', dificuldade: 'facil' },
+    { pergunta: "Quantos dentes tem um caracol?", opcoes: ["100", "1000", "14000", "25000"], correta: 3, cat: 'curiosidades', dificuldade: 'dificil' },
+    { pergunta: "O pimentao e uma?", opcoes: ["Legume", "Fruta", "Verdura", "Tuberculo"], correta: 1, cat: 'curiosidades', dificuldade: 'dificil' },
+    { pergunta: "Quantos coracoes tem um polvo?", opcoes: ["1", "2", "3", "4"], correta: 2, cat: 'curiosidades', dificuldade: 'medio' },
+    { pergunta: "Qual e a maior estrutura viva do mundo?", opcoes: ["Grande Barreira de Corais", "Floresta Amazonica", "Muralha da China", "Baobá"], correta: 0, cat: 'curiosidades', dificuldade: 'dificil' },
+    { pergunta: "Quantos kilometres tem o Muro da China?", opcoes: ["Cerca de 5000 km", "Cerca de 13000 km", "Cerca de 21000 km", "Cerca de 30000 km"], correta: 2, cat: 'curiosidades', dificuldade: 'dificil' },
+    { pergunta: "Comida mais consumida no mundo?", opcoes: ["Arroz", "Trigo", "Milho", "Batata"], correta: 0, cat: 'curiosidades', dificuldade: 'medio' },
+    { pergunta: "Quantas horas tem um dia em Venus?", opcoes: ["24h", "243h", "365h", "18h"], correta: 1, cat: 'curiosidades', dificuldade: 'dificil' },
+    { pergunta: "Animal que nunca dorme?", opcoes: ["Golfinho", "Tubarao", "Formiga", "Cavalo"], correta: 1, cat: 'curiosidades', dificuldade: 'dificil' },
+    { pergunta: "O que e a 'Aurora Boreal'?", opcoes: ["Fenomeno luminoso atmosferico", "Estrela cadente", "Eclipse solar", "Arco-iris"], correta: 0, cat: 'curiosidades', dificuldade: 'facil' },
+    { pergunta: "Quantos planetas anoes tem o sistema solar?", opcoes: ["2", "3", "4", "5"], correta: 3, cat: 'curiosidades', dificuldade: 'dificil' },
+];
+
+// ===== REGISTRO DE GENEROS =====
+const generos = {};
+
+function registrarGenero(id, nome, icone, desc, cor, perguntasArray) {
+    generos[id] = { id, nome, icone, desc, cor, perguntas: perguntasArray };
+}
+
+registrarGenero('games', 'Games', '🎮', 'Geral, FPS, RPG, Pixel...', '#4ade80', perguntasGames);
+registrarGenero('filmes', 'Filmes', '🎬', 'Acao, Ficcao, Animacao...', '#f7971e', perguntasFilmes);
+registrarGenero('matematica', 'Matematica', '📐', 'Equacoes, Geometria, Logica...', '#f87171', perguntasMatematica);
+registrarGenero('geografia', 'Geografia', '🌍', 'Paises, Capitais, Rios...', '#3b82f6', perguntasGeografia);
+registrarGenero('ciencias', 'Ciencias', '🔬', 'Biologia, Quimica, Fisica...', '#8b5cf6', perguntasCiencias);
+registrarGenero('historia', 'Historia', '📜', 'Brasil, Mundo, Guerras...', '#f59e0b', perguntasHistoria);
+registrarGenero('esportes', 'Esportes', '⚽', 'Futebol, Basquete, Formula 1...', '#10b981', perguntasEsportes);
+registrarGenero('musica', 'Musica', '🎵', 'Bandas, Instrumentos, Teoria...', '#ec4899', perguntasMusica);
+registrarGenero('tecnologia', 'Tecnologia', '💻', 'Programacao, Hardware, Internet...', '#14b8a6', perguntasTecnologia);
+registrarGenero('animes', 'Animes', '🗾', 'Dragon Ball, Naruto, One Piece...', '#e8637a', perguntasAnimes);
+registrarGenero('literatura', 'Literatura', '📚', 'Livros, Autores, Classic...', '#a855f7', perguntasLiteratura);
+registrarGenero('arte', 'Arte', '🎨', 'Pintura, Escultura, Museus...', '#e8637a', perguntasArte);
+registrarGenero('curiosidades', 'Curiosidades', '🐱', 'Fatos interessantes e gerais...', '#fbbf24', perguntasCuriosidades);
+
+// Genero "Todos" combina todos automaticamente
+const perguntasTodos = [];
+for (const [id, g] of Object.entries(generos)) {
+    perguntasTodos.push(...g.perguntas);
+}
+registrarGenero('todos', 'Todos', '🌟', 'Mistura completa!', '#ffd700', perguntasTodos);
+
+
 
 // ===== PIXEL ART =====
 const pixelCharacters = {
     naruto: {
-        nome: 'Naruto Uzumaki', anime: 'Naruto', preco: 200,
-        palette: ['', '#e8872a', '#f5c842', '#f5deb3', '#222', '#fff', '#3d7ed3'],
-        pixels: ['..1111..', '.111111.', '.135531.', '.136631.', '.111111.', '..1111..', '...44...', '..4444..', '44...44.', '.4...4..']
+        nome: 'Naruto', cor: '#f7971e',
+        paleta: ['#f5d6a8','#1a1a1a','#f7971e','#1e40af','#ffd700','#fff','#e65c00','#66d9ff','#003566'],
+        sprite: [
+            '.....044440.....',
+            '....04444440....',
+            '...0444444440...',
+            '...044.44.440...',
+            '...044.44.440...',
+            '....0.0.0.0.....',
+            '....0.....0.....',
+            '....0.000.0.....',
+            '....0.000.0.....',
+            '....0.....0.....',
+            '....0.....0.....',
+            '...000000000....',
+            '..0222222220....',
+            '.22222222222....',
+            '.22222222222....',
+            '.22222222222....',
+            '.22233333222....',
+            '..223333322.....',
+            '...22...22......',
+            '...22...22......'
+        ]
     },
     goku: {
-        nome: 'Goku', anime: 'Dragon Ball', preco: 250,
-        palette: ['', '#e85d2a', '#f5c842', '#f5deb3', '#222', '#3d7ed3'],
-        pixels: ['..1111..', '.133331.', '.111111.', '.355553.', '.111111.', '..1111..', '..4..4..', '.444444.', '44.44.44', '4..44..4']
+        nome: 'Goku', cor: '#f87171',
+        paleta: ['#f5d6a8','#1a1a1a','#f87171','#1e40af','#ff6b35','#fff','#ffd700','#60a5fa'],
+        sprite: [
+            '.....044440.....',
+            '....04444440....',
+            '...0444444440...',
+            '...0444444440...',
+            '...044.44.440...',
+            '....0.0.0.0.....',
+            '.....0...0......',
+            '....0.0.0.0.....',
+            '...0.00000.0....',
+            '...0.0...0.0....',
+            '...0..0.0..0....',
+            '..000.000.000...',
+            '..022.333.220...',
+            '.2222233332222..',
+            '.2222233332222..',
+            '.2222233332222..',
+            '.2222222222222..',
+            '..022222222220..',
+            '...223...322....',
+            '...22.....22....'
+        ]
     },
     luffy: {
-        nome: 'Monkey D. Luffy', anime: 'One Piece', preco: 200,
-        palette: ['', '#e8872a', '#f5deb3', '#222', '#c43a31', '#f5c842'],
-        pixels: ['..1111..', '.111111.', '.123321.', '.124421.', '.111111.', '..1111..', '...55...', '..5555..', '55...55.', '5...5...']
+        nome: 'Luffy', cor: '#f87171',
+        paleta: ['#f5d6a8','#1a1a1a','#ef4444','#1e3a5f','#fbbf24','#fff','#8b4513','#ff6b35'],
+        sprite: [
+            '.....044440.....',
+            '....04444440....',
+            '...0444444440...',
+            '...0444444440...',
+            '...044464440....',
+            '...044464440....',
+            '....0.0.0.0.....',
+            '....0..0..0.....',
+            '...0.0.0.0.0....',
+            '...0..0.0..0....',
+            '...0..0.0..0....',
+            '..000.000.000...',
+            '..022.333.220...',
+            '.2222233332222..',
+            '.2222233332222..',
+            '.2222233332222..',
+            '.2222222222222..',
+            '..022222222220..',
+            '...22.....22....',
+            '...22.....22....'
+        ]
     },
     pikachu: {
-        nome: 'Pikachu', anime: 'Pokémon', preco: 150,
-        palette: ['', '#f5c842', '#f5deb3', '#c43a31', '#222'],
-        pixels: ['..11..11', '.111111.', '.112211.', '.111111.', '..1111..', '.111111.', '..2..2..', '.222222.', '22...22.', '2...2...']
+        nome: 'Pikachu', cor: '#fbbf24',
+        paleta: ['#fbbf24','#8b4513','#1a1a1a','#f87171','#fff','#f59e0b','#fef3c7'],
+        sprite: [
+            '.....000000.....',
+            '....00000000....',
+            '...0000000000...',
+            '...0000000000...',
+            '..000000000000..',
+            '..000011000000..',
+            '..000011000000..',
+            '...03000030.....',
+            '...0.0000.0.....',
+            '..0.000000.0....',
+            '..0000000000....',
+            '..0000000000....',
+            '..0044444000....',
+            '...04444440.....',
+            '...00444400.....',
+            '....0044000.....',
+            '....00..000.....',
+            '...00....00.....',
+            '..050....050....',
+            '................'
+        ]
     },
     tanjiro: {
-        nome: 'Tanjiro Kamado', anime: 'Demon Slayer', preco: 200,
-        palette: ['', '#2d6b3f', '#8b4513', '#f5deb3', '#222', '#c43a31'],
-        pixels: ['.111111.', '11111111', '11...11.', '.133331.', '..1111..', '..1111..', '.144441.', '..1441..', '...44...', '..44.44.']
+        nome: 'Tanjiro', cor: '#4ade80',
+        paleta: ['#f5d6a8','#1a1a1a','#2d5a27','#4ade80','#6b2d2d','#fff','#8b4513','#cc3333'],
+        sprite: [
+            '.....044440.....',
+            '....04477440....',
+            '...044444440....',
+            '...044444440....',
+            '...044.44.440...',
+            '...044.44.440...',
+            '....0.0.0.0.....',
+            '....0..0..0.....',
+            '...0.00000.0....',
+            '...0.0...0.0....',
+            '..0.0.....0.0...',
+            '.000.00000.000..',
+            '..02.03330.20...',
+            '.2222333332222..',
+            '.2222333332222..',
+            '.2222333332222..',
+            '.2222222222222..',
+            '..22222222222...',
+            '...22.....22....',
+            '...22.....22....'
+        ]
     },
     gojo: {
-        nome: 'Satoru Gojo', anime: 'Jujutsu Kaisen', preco: 300,
-        palette: ['', '#fff', '#f5deb3', '#222', '#b8d4e3'],
-        pixels: ['..1111..', '.111111.', '.122221.', '.122221.', '.111111.', '..1111..', '..4..4..', '.444444.', '44.44.44', '4..44..4']
+        nome: 'Gojo', cor: '#3b82f6',
+        paleta: ['#f5d6a8','#1a1a1a','#3b82f6','#fff','#1e40af','#e5e7eb','#93c5fd'],
+        sprite: [
+            '......05550.....',
+            '.....0555550....',
+            '....055555550...',
+            '....055555550...',
+            '....055.55.550..',
+            '.....5.5.5.5....',
+            '.....5.....5....',
+            '.....5.0.0.5....',
+            '.....5.0.0.5....',
+            '....0.0...0.0...',
+            '....0..0.0..0...',
+            '...000.000.000..',
+            '...022.333.220..',
+            '..2222333332222.',
+            '..2222333332222.',
+            '..2222333332222.',
+            '...22222222222..',
+            '....222222222...',
+            '....22.....22...',
+            '...22.......22..'
+        ]
     },
     mikasa: {
-        nome: 'Mikasa Ackerman', anime: 'Attack on Titan', preco: 220,
-        palette: ['', '#222', '#555', '#f5deb3', '#c43a31'],
-        pixels: ['..1111..', '.111111.', '.132231.', '.122221.', '.111111.', '..1111..', '...44...', '..4444..', '44...44.', '4...4...']
+        nome: 'Mikasa', cor: '#8b5cf6',
+        paleta: ['#f5d6a8','#1a1a1a','#8b5cf6','#ef4444','#4a3728','#fff','#a78bfa','#7e22ce'],
+        sprite: [
+            '.....044440.....',
+            '....04444440....',
+            '...0444444440...',
+            '...0444444440...',
+            '...044.44.440...',
+            '....0.0.0.0.....',
+            '....0..0..0.....',
+            '...0.0.0.0.0....',
+            '...0..0.0..0....',
+            '...0..0.0..0....',
+            '..000.000.000...',
+            '..022.333.220...',
+            '.2223333332222..',
+            '.2223333332222..',
+            '.2223333332222..',
+            '.2222222222222..',
+            '..022222222220..',
+            '...22.....22....',
+            '...22.....22....',
+            '................'
+        ]
     },
     sailor: {
-        nome: 'Sailor Moon', anime: 'Sailor Moon', preco: 180,
-        palette: ['', '#f5c842', '#e84a8a', '#f5deb3', '#fff', '#3d7ed3'],
-        pixels: ['.111111.', '11555511', '11333511', '11111111', '..1111..', '.111111.', '.14..41.', '..1441..', '...44...', '..44.44.']
+        nome: 'Sailor Moon', cor: '#ec4899',
+        paleta: ['#f5d6a8','#1a1a1a','#ec4899','#3b82f6','#ffd700','#fff','#f472b6','#fef3c7'],
+        sprite: [
+            '.....044440.....',
+            '....04444440....',
+            '...0444444440...',
+            '...0444444440...',
+            '...044.44.440...',
+            '...044.44.440...',
+            '....0.0.0.0.....',
+            '....0..0..0.....',
+            '...0.0.0.0.0....',
+            '...0..0.0..0....',
+            '...0..0.0..0....',
+            '..000.000.000...',
+            '..02203330220...',
+            '.2222333332222..',
+            '.2222333332222..',
+            '.2222333332222..',
+            '.2222222222222..',
+            '..022222222220..',
+            '...22.....22....',
+            '...22.....22....'
+        ]
     },
     vegeta: {
-        nome: 'Vegeta', anime: 'Dragon Ball', preco: 260,
-        palette: ['', '#3d7ed3', '#f5c842', '#f5deb3', '#222', '#fff'],
-        pixels: ['..1111..', '.133331.', '.111111.', '.355553.', '.111111.', '..1111..', '...44...', '..4444..', '44...44.', '4...4...']
+        nome: 'Vegeta', cor: '#f87171',
+        paleta: ['#f5d6a8','#1a1a1a','#f87171','#14b8a6','#38bdf8','#fff','#e5e7eb','#f59e0b'],
+        sprite: [
+            '.....044440.....',
+            '....04444440....',
+            '...0444444440...',
+            '...0444444440...',
+            '...044.44.440...',
+            '....0.0.0.0.....',
+            '.....0...0......',
+            '....0.0.0.0.....',
+            '...0.00000.0....',
+            '...0.0...0.0....',
+            '...0..0.0..0....',
+            '..000.000.000...',
+            '..022.333.220...',
+            '.2222233332222..',
+            '.2222233332222..',
+            '.2222233332222..',
+            '.2222222222222..',
+            '..022222222220..',
+            '...22.....22....',
+            '...22.....22....'
+        ]
     },
     itachi: {
-        nome: 'Itachi Uchiha', anime: 'Naruto', preco: 280,
-        palette: ['', '#222', '#8b0000', '#f5deb3', '#fff', '#c43a31'],
-        pixels: ['.111111.', '12222221', '12222221', '.111111.', '.111111.', '..1111..', '..4..4..', '.444444.', '44.44.44', '4..44..4']
+        nome: 'Itachi', cor: '#f87171',
+        paleta: ['#f5d6a8','#1a1a1a','#f87171','#4a0e4e','#cc3333','#e5e7eb','#7e22ce','#fbbf24'],
+        sprite: [
+            '.....044440.....',
+            '....04444440....',
+            '...0444444440...',
+            '...0444444440...',
+            '...044.44.440...',
+            '....0.0.0.0.....',
+            '....0..0..0.....',
+            '...0.0.0.0.0....',
+            '...0..0.0..0....',
+            '...0..0.0..0....',
+            '..000.000.000...',
+            '..022.333.220...',
+            '.2222333332222..',
+            '.2222333332222..',
+            '.2222333332222..',
+            '.2222222222222..',
+            '..022222222220..',
+            '...22.....22....',
+            '...22.....22....',
+            '................'
+        ]
     }
 };
 
-function renderPixel(canvas, charData, size) {
-    const p = size || 4;
+function renderPixel(canvasId, charId, tamanho) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const char = pixelCharacters[charId];
+    if (!char) return;
     const ctx = canvas.getContext('2d');
-    const rows = charData.pixels.length;
-    const cols = charData.pixels[0].length;
-    canvas.width = cols * p;
-    canvas.height = rows * p;
-    for (let y = 0; y < rows; y++) {
-        for (let x = 0; x < cols; x++) {
-            const idx = charData.pixels[y][x];
-            const c = parseInt(idx, 16);
-            if (c === 0 || isNaN(c)) continue;
-            ctx.fillStyle = charData.palette[c];
-            ctx.fillRect(x * p, y * p, p, p);
+    const size = tamanho || 8;
+    const cols = char.sprite[0] ? char.sprite[0].length : 8;
+    const rows = char.sprite.length;
+    canvas.width = cols * size;
+    canvas.height = rows * size;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let row = 0; row < rows; row++) {
+        const line = char.sprite[row];
+        if (!line) continue;
+        for (let col = 0; col < cols; col++) {
+            const idx = line[col];
+            if (idx === '.') continue;
+            const cor = char.paleta[parseInt(idx)];
+            if (!cor) continue;
+            ctx.fillStyle = cor;
+            ctx.fillRect(col * size, row * size, size, size);
         }
     }
 }
 
-// ===== SISTEMA DE USER =====
-const XP_BASE = 30;
-const XP_NIVEL_BASE = 80;
-const FATOR_NIVEL = 1.08;
-const NIVEL_MAX = 69;
-const MOEDAS_ACERTO = 5;
-const MOEDAS_ERRO = 1;
-const BONUS_STREAK_MAX = 10;
+// ===== CHARACTER DETAILS =====
+const personagemDetalhes = {
+    naruto: { quote: 'Vou me tornar Hokage, acredite!', corBg: ['#f7971e', '#ff6b00'], emojis: ['🍜', '🦊', '🌀'], passivaDesc: 'Determinacao: +5% XP' },
+    goku: { quote: 'Isso ultrapassa 9000!', corBg: ['#f87171', '#3b82f6'], emojis: ['🐉', '✨', '🍚'], passivaDesc: 'Super Saiyajin: +1 vida no inicio' },
+    luffy: { quote: 'Eu vou ser o Rei dos Piratas!', corBg: ['#f87171', '#fbbf24'], emojis: ['☠️', '🍖', '🏴‍☠️'], passivaDesc: 'Rei dos Piratas: +10% moedas' },
+    pikachu: { quote: 'Pika Pika!', corBg: ['#fbbf24', '#f59e0b'], emojis: ['⚡', '⚡', '🔋'], passivaDesc: 'Eletricidade: +3s no timer' },
+    tanjiro: { quote: 'Hinokami Kagura!', corBg: ['#4ade80', '#1a6b3c'], emojis: ['🌊', '🗡️', '💧'], passivaDesc: 'Folego Constante: 10% salvar vida' },
+    gojo: { quote: 'Nah, eu venceria.', corBg: ['#3b82f6', '#1e3a5f'], emojis: ['💜', '👁️', '🌀'], passivaDesc: 'Seis Olhos: Poder 2x por quiz' },
+    mikasa: { quote: 'Esse mundo e cruel...', corBg: ['#8b5cf6', '#4a1d6e'], emojis: ['🗡️', '🧣', '🕊️'], passivaDesc: 'Lealdade: +2 moedas por acerto' },
+    sailor: { quote: 'Em nome da Lua, eu te puno!', corBg: ['#ec4899', '#7e22ce'], emojis: ['🌙', '✨', '💖'], passivaDesc: 'Luar: +1 vida extra no inicio' },
+    vegeta: { quote: 'Eu sou o Principe dos Sayajins!', corBg: ['#14b8a6', '#0f766e'], emojis: ['💥', '👑', '🔥'], passivaDesc: 'Principe Sayajin: +15% XP' },
+    itachi: { quote: 'Perdoe-me, Sasuke...', corBg: ['#f87171', '#1a1a1a'], emojis: ['🐦‍⬛', '🔮', '🍃'], passivaDesc: 'Sharingan: Elimina 1 opcao errada' }
+};
 
-let user = carregarUser();
+// ===== CHARACTER DETAIL =====
+function mostrarDetalhePersonagem(id) {
+    const char = pixelCharacters[id];
+    const poder = poderesDisponiveis[id];
+    const passiva = getPassiva(id);
+    const detalhe = personagemDetalhes[id];
+    if (!char) return;
+
+    const overlay = document.getElementById('charDetailOverlay');
+    const modal = document.getElementById('charDetailModal');
+    if (!overlay || !modal) return;
+
+    renderPixel('charDetailPixel', id, 8);
+
+    document.getElementById('charDetailNome').innerText = char.nome;
+    document.getElementById('charDetailPoder').innerHTML = (poder ? poder.icone + ' ' + poder.nome + ' — ' + poder.desc : 'Nenhum');
+    document.getElementById('charDetailPassiva').innerText = passiva ? passiva.desc : 'Nenhuma';
+
+    const quoteEl = document.getElementById('charDetailQuote');
+    if (detalhe && detalhe.quote) {
+        quoteEl.innerText = '"' + detalhe.quote + '"';
+        quoteEl.style.display = 'block';
+    } else {
+        quoteEl.style.display = 'none';
+    }
+
+    const glowCor = (detalhe && detalhe.corBg) ? detalhe.corBg[0] : '#a855f7';
+    if (detalhe && detalhe.corBg) {
+        modal.style.background = 'linear-gradient(135deg, ' + detalhe.corBg[0] + '22, ' + detalhe.corBg[1] + '44)';
+        modal.style.borderColor = detalhe.corBg[0];
+    } else {
+        modal.style.background = 'rgba(20, 10, 30, 0.97)';
+        modal.style.borderColor = '#a855f7';
+    }
+    modal.style.boxShadow = '0 0 30px ' + glowCor + '33, inset 0 0 30px ' + glowCor + '11';
+
+    // Floating emojis background
+    const bgEl = document.getElementById('charDetailBgEmojis');
+    if (bgEl) {
+        bgEl.innerHTML = '';
+        const emojis = (detalhe && detalhe.emojis) || ['⭐', '✨', '💫'];
+        for (let i = 0; i < 12; i++) {
+            const span = document.createElement('span');
+            span.className = 'char-detail-float';
+            span.innerText = emojis[i % emojis.length];
+            span.style.left = (Math.random() * 90 + 5) + '%';
+            span.style.animationDelay = (Math.random() * 8) + 's';
+            span.style.fontSize = (Math.random() * 14 + 10) + 'px';
+            span.style.opacity = 0.15 + Math.random() * 0.25;
+            bgEl.appendChild(span);
+        }
+    }
+
+    overlay.classList.add('ativo');
+    modal.classList.add('ativo');
+}
+
+function fecharDetalhePersonagem() {
+    const overlay = document.getElementById('charDetailOverlay');
+    const modal = document.getElementById('charDetailModal');
+    if (overlay) overlay.classList.remove('ativo');
+    if (modal) modal.classList.remove('ativo');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const overlay = document.getElementById('charDetailOverlay');
+    if (overlay) {
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) fecharDetalhePersonagem();
+        });
+    }
+});
+
+// ===== USER SYSTEM =====
+let user = null;
 
 function xpParaProximoNivel(nivel) {
+    if (nivel >= NIVEL_MAX) return 0;
     return Math.floor(XP_NIVEL_BASE * Math.pow(FATOR_NIVEL, nivel - 1));
 }
 
 function carregarUser() {
-    const salvo = localStorage.getItem('quizUser');
-    if (salvo) {
-        const u = JSON.parse(salvo);
-        u.xpProximoNivel = xpParaProximoNivel(u.nivel);
-        return u;
+    const saved = localStorage.getItem('quizMastersUser');
+    if (saved) {
+        try {
+            const parsed = JSON.parse(saved);
+            user = {
+                nivel: parsed.nivel || 1,
+                xp: parsed.xp || 0,
+                xpProximoNivel: xpParaProximoNivel(parsed.nivel || 1),
+                moedas: parsed.moedas || 0,
+                streak: parsed.streak || 0,
+                maxStreak: parsed.maxStreak || 0,
+                totalAcertos: parsed.totalAcertos || 0,
+                totalPerguntas: parsed.totalPerguntas || 0,
+                boostAtivo: parsed.boostAtivo || null,
+                inventario: parsed.inventario || { personagens: [], ranks: [], posts: [], boosts: [] },
+                equipado: parsed.equipado || { personagem: null, rank: null, post: null },
+                perguntasRespondidas: parsed.perguntasRespondidas || {},
+                conquistas: parsed.conquistas || [],
+                generosJogados: parsed.generosJogados || [],
+                poderesUsados: parsed.poderesUsados || []
+            };
+            generosJogados = user.generosJogados;
+            if (user.nivel > NIVEL_MAX) user.nivel = NIVEL_MAX;
+            user.xpProximoNivel = xpParaProximoNivel(user.nivel);
+        } catch (e) {
+            criarNovoUser();
+        }
+    } else {
+        criarNovoUser();
     }
-    return {
+}
+
+function criarNovoUser() {
+    user = {
         nivel: 1, xp: 0, xpProximoNivel: xpParaProximoNivel(1),
         moedas: 0, streak: 0, maxStreak: 0,
         totalAcertos: 0, totalPerguntas: 0,
         boostAtivo: null,
-        inventario: { personagens: [], ranks: [], posts: [] },
-        equipado: { personagem: null, rank: null, post: null }
+        inventario: { personagens: [], ranks: [], posts: [], boosts: [] },
+        equipado: { personagem: null, rank: null, post: null },
+        perguntasRespondidas: {},
+        conquistas: [],
+        generosJogados: [],
+        poderesUsados: []
     };
 }
 
 function salvarUser() {
-    user.xpProximoNivel = xpParaProximoNivel(user.nivel);
-    localStorage.setItem('quizUser', JSON.stringify(user));
+    if (!user) return;
+    const data = {
+        nivel: user.nivel, xp: user.xp, moedas: user.moedas,
+        streak: user.streak, maxStreak: user.maxStreak,
+        totalAcertos: user.totalAcertos, totalPerguntas: user.totalPerguntas,
+        boostAtivo: user.boostAtivo,
+        inventario: user.inventario, equipado: user.equipado,
+        perguntasRespondidas: user.perguntasRespondidas,
+        conquistas: user.conquistas,
+        generosJogados: user.generosJogados,
+        poderesUsados: user.poderesUsados
+    };
+    localStorage.setItem('quizMastersUser', JSON.stringify(data));
 }
 
 function mostrarPopup(texto, tipo) {
     const container = document.getElementById('floatingPopups');
-    const el = document.createElement('div');
-    el.className = `floating-popup ${tipo}`;
-    el.innerText = texto;
-    container.appendChild(el);
-    setTimeout(() => el.remove(), 1300);
+    if (!container) return;
+    const popup = document.createElement('div');
+    popup.className = 'floating-popup ' + (tipo || 'xp');
+    popup.innerText = texto;
+    container.appendChild(popup);
+    setTimeout(() => popup.remove(), 1300);
 }
 
-function ganharXp(quantia) {
-    const multBoost = user.boostAtivo ? user.boostAtivo.multiplicador : 1;
-    const rankAtivo = user.equipado.rank ? lojaRanks.find(r => r.id === user.equipado.rank) : null;
-    const multRank = rankAtivo ? rankAtivo.multiplicadorXP : 1;
-    const total = Math.floor(quantia * multBoost * multRank);
-    if (total > 0) mostrarPopup(`+${total} XP`, 'xp');
-    user.xp += total;
+function ganharXp(quantidade) {
+    if (!user || quantidade <= 0) return;
+    user.xp += quantidade;
+    mostrarPopup('+' + quantidade + ' XP', 'xp');
     while (user.xp >= user.xpProximoNivel && user.nivel < NIVEL_MAX) {
         user.xp -= user.xpProximoNivel;
         user.nivel++;
         user.xpProximoNivel = xpParaProximoNivel(user.nivel);
-        if (user.nivel === NIVEL_MAX) user.xp = 0;
-        mostrarPopup(`⬆ LEVEL ${user.nivel}!`, 'xp');
+        notificar('🎉 SUBIU DE NIVEL! Voce agora e nivel ' + user.nivel + '!', '#ffd700');
+        if (user.nivel >= NIVEL_MAX) {
+            user.xp = 0;
+            user.xpProximoNivel = 0;
+            break;
+        }
     }
-    if (user.boostAtivo) {
-        user.boostAtivo.restantes--;
-        if (user.boostAtivo.restantes <= 0) user.boostAtivo = null;
+    if (user.nivel >= NIVEL_MAX) {
+        user.xp = 0;
+        user.xpProximoNivel = 0;
     }
     salvarUser();
-    atualizarHUD();
 }
 
-function ganharMoedas(quantia) {
-    if (quantia > 0) mostrarPopup(`+${quantia} 🪙`, 'coin');
-    user.moedas += quantia;
+function ganharMoedas(quantidade) {
+    if (!user || quantidade <= 0) return;
+    user.moedas += quantidade;
+    mostrarPopup('+' + quantidade + ' 🪙', 'coin');
     salvarUser();
-    atualizarHUD();
 }
 
-// ===== LOJA =====
+// ===== SHOP DATA =====
 const lojaBoosts = [
-    { id: 'boost2x', nome: 'Boost 2x XP', desc: 'Dobre seu XP por 5 perguntas!', preco: 50, multiplicador: 2, restantes: 5, cor: '#f7971e' },
-    { id: 'boost3x', nome: 'Boost 3x XP', desc: 'Triplique seu XP por 5 perguntas!', preco: 120, multiplicador: 3, restantes: 5, cor: '#e84a8a' },
-    { id: 'boost5x', nome: 'Boost 5x XP', desc: 'XP QUINTUPLICADO por 3 perguntas!', preco: 200, multiplicador: 5, restantes: 3, cor: '#c43a31' }
+    { id: 'boost_xp', nome: 'Multiplicador XP', desc: '+50% XP por 30s', preco: 80, icone: '⚡' },
+    { id: 'boost_moedas', nome: 'Multiplicador Moedas', desc: '+50% moedas por 30s', preco: 60, icone: '🪙' },
+    { id: 'boost_vida', nome: 'Vida Extra', desc: 'Comece com +1 vida', preco: 100, icone: '❤️' },
+    { id: 'boost_2x', nome: '2X XP', desc: 'Dobra XP por 20s', preco: 150, icone: '🔥' },
+    { id: 'boost_triplo', nome: '3X XP', desc: 'Triplica XP por 15s', preco: 250, icone: '💫' },
+    { id: 'boost_dobro', nome: 'Moedas Dobradas', desc: '+100% moedas por 25s', preco: 120, icone: '💰' }
 ];
 
 const lojaRanks = [
-    { id: 'bronze', nome: 'Bronze', desc: 'Rank Iniciante', preco: 100, cor: '#cd7f32', icone: '🟤', multiplicadorXP: 1.1 },
-    { id: 'prata', nome: 'Prata', desc: 'Rank Intermediário', preco: 250, cor: '#c0c0c0', icone: '🥈', multiplicadorXP: 1.3 },
-    { id: 'ouro', nome: 'Ouro', desc: 'Rank Avançado', preco: 500, cor: '#ffd700', icone: '🥇', multiplicadorXP: 1.5 },
-    { id: 'platina', nome: 'Platina', desc: 'Rank Elite', preco: 1000, cor: '#e5e4e2', icone: '💎', multiplicadorXP: 1.7 },
-    { id: 'diamante', nome: 'Diamante', desc: 'Rank Lendário', preco: 2000, cor: '#b9f2ff', icone: '💠', multiplicadorXP: 2.0 },
-    { id: 'mestre', nome: 'Mestre', desc: 'Rank Mestre dos Quizzes', preco: 3500, cor: '#9b59b6', icone: '👑', multiplicadorXP: 2.5 },
-    { id: 'desafiante', nome: 'Desafiante', desc: 'Rank Supremo', preco: 5000, cor: '#e74c3c', icone: '🔥', multiplicadorXP: 3.0 }
+    { id: 'bronze', nome: 'Bronze', desc: 'Rank inicial', preco: 0, icone: '🥉', mult: 1.0, cor: '#cd7f32' },
+    { id: 'prata', nome: 'Prata', desc: 'Rank intermediario', preco: 200, icone: '🥈', mult: 1.2, cor: '#c0c0c0' },
+    { id: 'ouro', nome: 'Ouro', desc: 'Rank avancado', preco: 500, icone: '🥇', mult: 1.5, cor: '#ffd700' },
+    { id: 'platina', nome: 'Platina', desc: 'Rank premium', preco: 800, icone: '💿', mult: 1.8, cor: '#e5e4e2' },
+    { id: 'diamante', nome: 'Diamante', desc: 'Rank elite', preco: 1000, icone: '💎', mult: 2.0, cor: '#00bfff' },
+    { id: 'esmeralda', nome: 'Esmeralda', desc: 'Rank mitico', preco: 1800, icone: '💚', mult: 2.5, cor: '#50c878' },
+    { id: 'mestre', nome: 'Mestre', desc: 'Rank lendario', preco: 2500, icone: '👑', mult: 3.0, cor: '#a855f7' }
 ];
 
 const lojaPosts = [
-    { id: 'post_gamer', nome: 'Post Gamer', desc: 'Mostre que é um gamer', preco: 50, conteudo: '🎮 Gamer de verdade!' },
-    { id: 'post_nerd', nome: 'Post Nerd', desc: 'Orgulho nerd', preco: 75, conteudo: '🤓 Nível nerd máximo!' },
-    { id: 'post_elite', nome: 'Post Elite', desc: 'Você é da elite', preco: 100, conteudo: '🏆 Elite do Quiz!' },
-    { id: 'post_lendario', nome: 'Post Lendário', desc: 'Apenas lendas têm esse', preco: 200, conteudo: '⭐ LENDÁRIO! ⭐' },
-    { id: 'post_otaku', nome: 'Post Otaku', desc: 'Para amantes de anime', preco: 80, conteudo: '🎌 Cultura Otaku 🎌' },
-    { id: 'post_hokage', nome: 'Post Hokage', desc: 'O caminho do Hokage', preco: 150, conteudo: '🔥 Caminho do Hokage 🔥' }
+    { id: 'post_frase1', nome: 'Sabio', desc: 'O conhecimento e o unico tesouro que ninguem pode roubar.', preco: 50, icone: '📜' },
+    { id: 'post_frase2', nome: 'Guerreiro', desc: 'Nao pare ate se orgulhar de si mesmo!', preco: 80, icone: '⚔️' },
+    { id: 'post_frase3', nome: 'Mestre', desc: 'Quanto mais eu sei, mais eu percebo que nao sei.', preco: 120, icone: '🎓' },
+    { id: 'post_frase4', nome: 'Lendario', desc: 'Nao ha atalhos para o conhecimento.', preco: 200, icone: '🏆' },
+    { id: 'post_frase5', nome: 'Cosmico', desc: 'A mente e o limite. Literalmente.', preco: 500, icone: '🌌' },
+    { id: 'post_frase6', nome: 'Fenix', desc: 'Das cinzas eu renasco mais forte.', preco: 150, icone: '🔥' },
+    { id: 'post_frase7', nome: 'Andarilho', desc: 'A jornada e o destino.', preco: 100, icone: '🌄' },
+    { id: 'post_frase8', nome: 'Dragao', desc: 'O medo e o inimigo interior.', preco: 250, icone: '🐉' },
+    { id: 'post_frase9', nome: 'Templario', desc: 'Honra acima de tudo.', preco: 180, icone: '🛡️' },
+    { id: 'post_frase10', nome: 'Estrategista', desc: 'Preveja o imprevisivel.', preco: 300, icone: '♟️' }
 ];
 
-// ===== FUNÇÕES DO QUIZ =====
+// ===== QUIZ FUNCTIONS =====
 function embaralhar(arr) {
-    for (let i = arr.length - 1; i > 0; i--) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
+        [a[i], a[j]] = [a[j], a[i]];
     }
-    return arr;
+    return a;
+}
+
+function renderizarGeneros() {
+    const grid = document.getElementById('generoGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    for (const [id, g] of Object.entries(generos)) {
+        if (id === 'todos') continue;
+        const btn = document.createElement('button');
+        btn.className = 'genero-btn';
+        btn.onclick = () => iniciarQuiz(id);
+        btn.innerHTML = '<span class="genero-icone">' + g.icone + '</span><span class="genero-nome">' + g.nome + '</span><span class="genero-desc">' + g.desc + '</span>';
+        grid.appendChild(btn);
+    }
+    if (generos.todos) {
+        const btnTodos = document.createElement('button');
+        btnTodos.className = 'genero-btn destaque';
+        btnTodos.onclick = () => iniciarQuiz('todos');
+        btnTodos.innerHTML = '<span class="genero-icone">' + generos.todos.icone + '</span><span class="genero-nome">' + generos.todos.nome + '</span><span class="genero-desc">' + generos.todos.desc + '</span>';
+        grid.appendChild(btnTodos);
+    }
 }
 
 function iniciarQuiz(genero) {
     generoAtual = genero;
-    let lista;
-    if (genero === 'games') lista = [...perguntasGames];
-    else if (genero === 'filmes') lista = [...perguntasFilmes];
-    else lista = [...perguntasGames, ...perguntasFilmes];
-
-    perguntas = embaralhar(lista).slice(0, Math.min(20, lista.length));
-    if (perguntas.length < 5) { perguntas = embaralhar(lista).slice(0, 5); }
-
+    if (!user.generosJogados.includes(genero)) {
+        user.generosJogados.push(genero);
+        generosJogados = user.generosJogados;
+        salvarUser();
+    }
+    
+    const gen = generos[genero];
+    if (!gen) return;
+    
+    const todas = gen.perguntas;
+    const idsRespondidos = (user.perguntasRespondidas[genero] || []);
+    
+    let disponiveis = todas.filter((_, idx) => !idsRespondidos.includes(idx));
+    
+    if (disponiveis.length < 5) {
+        user.perguntasRespondidas[genero] = [];
+        disponiveis = [...todas];
+        salvarUser();
+        notificar('🔄 Todas as perguntas de ' + gen.nome + ' foram recicladas!', '#ffd700');
+    }
+    
+    perguntas = embaralhar(disponiveis).slice(0, Math.min(20, disponiveis.length));
+    if (perguntas.length < 5) { perguntas = embaralhar(disponiveis).slice(0, 5); }
+    
     perguntaAtual = 0;
     pontuacao = 0;
-    vidas = 3;
+    vidas = 3 + getBoostVidaExtra();
     perguntaRespondida = false;
     quizAtivo = true;
     poderUsado = false;
     poderEfeito = null;
+    poderUsosRestantes = getMaxPoderUsos();
+    pararTimer();
+    aplicarPassivaInicioQuiz();
 
     document.getElementById('generoSelecao').style.display = 'none';
     document.getElementById('quizContainer').style.display = 'block';
@@ -322,129 +1163,211 @@ function exibirPergunta() {
     const total = perguntas.length;
     const item = perguntas[perguntaAtual];
 
-    document.getElementById("pergunta").innerText = item.pergunta;
-    document.getElementById("contador").innerText = `Questão ${perguntaAtual + 1} de ${total}`;
-    document.getElementById("pontuacaoParcial").innerText = `Acertos: ${pontuacao}`;
+    const badge = document.getElementById('generoBadge');
+    if (badge && item.cat) {
+        const gen = generos[item.cat];
+        if (gen) {
+            badge.innerHTML = gen.icone + ' ' + gen.nome;
+            badge.style.display = 'inline-block';
+            badge.style.borderColor = gen.cor;
+            badge.style.color = gen.cor;
+        }
+    }
 
-    const barra = document.getElementById("progresso");
-    barra.style.width = `${((perguntaAtual + 1) / total) * 100}%`;
+    const diffEl = document.getElementById('dificuldadeBadge');
+    if (diffEl) {
+        const diffNomes = { facil: 'Facil', medio: 'Medio', dificil: 'Dificil' };
+        const diffCores = { facil: '#4ade80', medio: '#fbbf24', dificil: '#f87171' };
+        const diffIcones = { facil: '🟢', medio: '🟡', dificil: '🔴' };
+        diffEl.innerHTML = (diffIcones[item.dificuldade] || '🟢') + ' ' + (diffNomes[item.dificuldade] || 'Facil');
+        diffEl.style.color = diffCores[item.dificuldade] || '#4ade80';
+        diffEl.style.display = 'inline-block';
+    }
 
-    const divOpcoes = document.getElementById("opcoes");
-    divOpcoes.innerHTML = "";
-    document.getElementById("btnProximo").style.display = "none";
-    document.getElementById("resultado").innerText = "";
-    const poderContainer = document.getElementById("poderContainer");
+    document.getElementById('pergunta').innerText = item.pergunta;
+    document.getElementById('contador').innerText = 'Questao ' + (perguntaAtual + 1) + ' de ' + total;
+    document.getElementById('pontuacaoParcial').innerText = 'Acertos: ' + pontuacao;
+
+    const barra = document.getElementById('progresso');
+    barra.style.width = ((perguntaAtual + 1) / total) * 100 + '%';
+
+    const divOpcoes = document.getElementById('opcoes');
+    divOpcoes.innerHTML = '';
+    document.getElementById('btnProximo').style.display = 'none';
+    document.getElementById('resultado').innerText = '';
+    const poderContainer = document.getElementById('poderContainer');
     if (poderContainer) poderContainer.remove();
     perguntaRespondida = false;
+    tempoResposta = 0;
 
-    // Power button
     const personId = user.equipado.personagem;
-    if (personId && poderesDisponiveis[personId] && !poderUsado) {
+    if (personId && poderesDisponiveis[personId] && poderUsosRestantes > 0) {
         const poder = poderesDisponiveis[personId];
-        const container = document.createElement("div");
-        container.id = "poderContainer";
+        const container = document.createElement('div');
+        container.id = 'poderContainer';
         container.style.cssText = 'text-align:center;margin-top:16px;';
-        container.innerHTML = `
-            <button onclick="usarPoder()" class="btn-poder" id="btnPoder">
-                ${poder.icone} ${poder.nome}: ${poder.desc}
-            </button>`;
+        const usosTexto = poderUsosRestantes > 1 ? ' (' + poderUsosRestantes + 'x)' : '';
+        container.innerHTML = '<button onclick="usarPoder()" class="btn-poder" id="btnPoder">' + poder.icone + ' ' + poder.nome + usosTexto + '</button>';
         divOpcoes.parentNode.insertBefore(container, divOpcoes.nextSibling);
     }
 
     item.opcoes.forEach((opcao, index) => {
-        const btn = document.createElement("button");
+        const btn = document.createElement('button');
         btn.innerText = opcao;
-        btn.classList.add("opcao");
+        btn.classList.add('opcao');
         btn.onclick = () => verificarResposta(index);
         divOpcoes.appendChild(btn);
     });
+
+    if (personId === 'itachi') {
+        const opcoesBtns = divOpcoes.querySelectorAll('.opcao');
+        if (opcoesBtns.length > 1) {
+            const erradas = [];
+            for (let i = 0; i < item.opcoes.length; i++) {
+                if (i !== item.correta) erradas.push(i);
+            }
+            const eliminar = erradas[Math.floor(Math.random() * erradas.length)];
+            opcoesBtns[eliminar].classList.add('eliminada');
+            opcoesBtns[eliminar].disabled = true;
+        }
+    }
+
+    iniciarTimer(item.dificuldade || 'facil');
 }
 
 function verificarResposta(selecionada) {
     if (perguntaRespondida || !quizAtivo) return;
     perguntaRespondida = true;
+    pararTimer();
+    
     const item = perguntas[perguntaAtual];
     const correta = item.correta;
-    const res = document.getElementById("resultado");
-    const botoes = document.querySelectorAll(".opcao");
+    const res = document.getElementById('resultado');
+    const botoes = document.querySelectorAll('.opcao');
 
     user.totalPerguntas++;
     botoes.forEach((b, i) => {
         b.disabled = true;
-        if (i === correta) b.classList.add("correta");
-        else if (i === selecionada && selecionada !== correta) b.classList.add("errada");
+        if (i === correta) b.classList.add('correta');
+        else if (i === selecionada && selecionada !== correta) b.classList.add('errada');
     });
 
+    if (tempoResposta <= 3 && selecionada === correta) {
+        user.conquistas = user.conquistas || [];
+        if (!user.conquistas.includes('rapido')) {
+            user.conquistas.push('rapido');
+            notificar('🏆 Conquista: Relampago! Responda em menos de 3s', '#ffd700');
+            ganharXp(100);
+        }
+    }
+
+    const genId = item.cat;
+    if (!user.perguntasRespondidas[genId]) user.perguntasRespondidas[genId] = [];
+    const gen = generos[genId];
+    if (gen) {
+        const originalIdx = gen.perguntas.indexOf(item);
+        if (originalIdx !== -1 && !user.perguntasRespondidas[genId].includes(originalIdx)) {
+            user.perguntasRespondidas[genId].push(originalIdx);
+        }
+    }
+
+    const multDificuldade = MULT_DIFICULDADE[item.dificuldade] || 1;
+
     if (selecionada === correta) {
-        res.innerText = "Correto!";
-        res.style.color = "#4ade80";
+        res.innerText = 'Correto!';
+        res.style.color = '#4ade80';
         pontuacao++;
         user.totalAcertos++;
         user.streak++;
         if (user.streak > user.maxStreak) user.maxStreak = user.streak;
+        const rankMult = getRankMultiplicador();
         const bonusStreak = Math.min(user.streak, BONUS_STREAK_MAX);
-        let xpGanho = XP_BASE + (bonusStreak * 2);
-        let moedasGanho = MOEDAS_ACERTO + Math.floor(bonusStreak / 2);
+        let xpGanho = Math.floor((XP_BASE + (bonusStreak * 2)) * multDificuldade * rankMult);
+        let moedasGanho = Math.floor((MOEDAS_ACERTO + Math.floor(bonusStreak / 2)) * rankMult);
+        
+        const tempoMax = TEMPO_POR_DIFICULDADE[item.dificuldade] || 20;
+        const tempoUsado = Math.min(tempoResposta, tempoMax);
+        const speedBonus = Math.floor((1 - tempoUsado / tempoMax) * 0.5 * xpGanho);
+        if (speedBonus > 0) {
+            xpGanho += speedBonus;
+            mostrarPopup('+' + speedBonus + ' bonus velocidade!', 'xp');
+        }
+        
         if (poderEfeito === 'xp_bonus') { xpGanho += 50; poderEfeito = null; }
         if (poderEfeito === 'moedas_dobradas') { moedasGanho *= 2; poderEfeito = null; }
         if (poderEfeito === 'xp_triplo') { xpGanho *= 3; poderEfeito = null; }
+        xpGanho = Math.floor(xpGanho * getBoostMultiplicadorXP());
+        moedasGanho = Math.floor(moedasGanho * getBoostMultiplicadorMoedas());
+        xpGanho = aplicarBonusPassivaXP(xpGanho);
+        moedasGanho = aplicarBonusPassivaMoedas(moedasGanho);
         ganharXp(xpGanho);
         ganharMoedas(moedasGanho);
-        document.getElementById("btnProximo").style.display = "inline-block";
+        document.getElementById('btnProximo').style.display = 'inline-block';
     } else {
-        res.innerText = `Errado! Resposta: ${item.opcoes[correta]}`;
-        res.style.color = "#f87171";
+        res.innerText = 'Errado! Resposta: ' + item.opcoes[correta];
+        res.style.color = '#f87171';
         user.streak = 0;
         ganharMoedas(MOEDAS_ERRO);
         perderVida();
+        document.getElementById('btnProximo').style.display = 'inline-block';
     }
 
+    verificarConquistas();
     atualizarHUD();
+    salvarUser();
 }
 
 function perderVida() {
+    if (getChanceSalvarVida()) {
+        notificar('🍃 Folego Constante! Vida salva!', '#4ade80');
+        return;
+    }
     vidas--;
     atualizarVidas();
     if (vidas <= 0) {
-        quizAtivo = false;
-        setTimeout(() => mostrarGameOver(), 600);
-    } else {
-        document.getElementById("btnProximo").style.display = "inline-block";
+        mostrarGameOver();
     }
 }
 
 function atualizarVidas() {
-    for (let i = 1; i <= 3; i++) {
-        const el = document.getElementById(`vida${i}`);
+    const maxVidas = 5;
+    for (let i = 1; i <= maxVidas; i++) {
+        const el = document.getElementById('vida' + i);
         if (!el) continue;
         if (i <= vidas) {
             el.className = 'vida';
+            el.style.display = 'inline';
         } else {
             el.className = 'vida perdida';
+            el.style.display = i > 3 ? 'none' : 'inline';
         }
     }
 }
 
 function mostrarGameOver() {
-    poderUsado = false;
-    poderEfeito = null;
+    quizAtivo = false;
+    pararTimer();
+    const overlay = document.getElementById('gameOverOverlay');
+    const msg = document.getElementById('gameoverMsg');
+    const acertos = document.getElementById('gameoverAcertos');
     const total = perguntas.length;
-    document.getElementById('gameoverAcertos').innerText = `Você acertou ${pontuacao} de ${total} perguntas`;
-    document.getElementById('gameOverOverlay').classList.add('ativo');
+    msg.innerText = 'Voce perdeu todas as vidas!';
+    acertos.innerText = 'Acertos: ' + pontuacao + '/' + total;
+    overlay.classList.add('ativo');
 }
 
 function fecharGameOver() {
     document.getElementById('gameOverOverlay').classList.remove('ativo');
-    resetarQuiz();
+    finalizarQuiz();
 }
 
 function proximaPergunta() {
     if (!quizAtivo) return;
     perguntaAtual++;
-    if (perguntaAtual < perguntas.length) {
-        exibirPergunta();
-    } else {
+    if (perguntaAtual >= perguntas.length) {
         finalizarQuiz();
+    } else {
+        exibirPergunta();
     }
 }
 
@@ -452,784 +1375,1611 @@ function finalizarQuiz() {
     quizAtivo = false;
     poderUsado = false;
     poderEfeito = null;
+    pararTimer();
     const total = perguntas.length;
-    const pct = Math.round((pontuacao / total) * 100);
-    const perfeito = pontuacao === total;
+    const pct = total > 0 ? Math.round((pontuacao / total) * 100) : 0;
 
-    if (perfeito) {
-        const xpBonus = Math.floor((XP_BASE + BONUS_STREAK_MAX * 2) * 0.5);
-        ganharXp(xpBonus * 2);
-        ganharMoedas((MOEDAS_ACERTO + Math.floor(BONUS_STREAK_MAX / 2)) * 2);
-        setTimeout(() => iniciarAnimacaoPerfeito(), 200);
+    const titulos = {
+        perfeito: { texto: '⭐ PERFEITO! ⭐', cor: '#ffd700', emoji: '🏆' },
+        excelente: { texto: '🎉 Excelente!', cor: '#4ade80', emoji: '🔥' },
+        bom: { texto: '👏 Bom trabalho!', cor: '#3b82f6', emoji: '💪' },
+        treinar: { texto: '💀 Continue treinando!', cor: '#f87171', emoji: '📚' }
+    };
+    let titulo = pct >= 100 ? titulos.perfeito : pct >= 70 ? titulos.excelente : pct >= 40 ? titulos.bom : titulos.treinar;
+
+    const xpBase = Math.floor(pontuacao * 10 * (pct / 100));
+    const moedasGanhas = pontuacao * 3 + Math.floor(pontuacao / 5) * 2;
+
+    document.getElementById('quizContainer').innerHTML =
+        '<div class="fim-card">' +
+            '<div class="fim-glow" style="background:' + titulo.cor + '"></div>' +
+            '<h2 class="fim-titulo" style="color:' + titulo.cor + '">' + titulo.texto + '</h2>' +
+            '<div class="fim-pontuacao">' + pontuacao + '/' + total + '</div>' +
+            '<div class="fim-pct" style="color:' + titulo.cor + '">' + pct + '% de acerto</div>' +
+            '<div class="fim-stats">' +
+                '<div class="fim-stat"><span class="fim-stat-num">+' + xpBase + '</span><span class="fim-stat-label">XP</span></div>' +
+                '<div class="fim-stat"><span class="fim-stat-num">+' + moedasGanhas + '</span><span class="fim-stat-label">Moedas</span></div>' +
+                '<div class="fim-stat"><span class="fim-stat-num">' + user.streak + '</span><span class="fim-stat-label">Streak</span></div>' +
+                '<div class="fim-stat"><span class="fim-stat-num">' + user.totalAcertos + '</span><span class="fim-stat-label">Total Acertos</span></div>' +
+            '</div>' +
+            '<button onclick="resetarQuiz()" class="btn-reiniciar" style="--btn-cor:' + titulo.cor + '">Jogar Novamente</button>' +
+        '</div>';
+
+    ganharXp(xpBase);
+    ganharMoedas(moedasGanhas);
+
+    if (pct >= 100) {
+        user.conquistas = user.conquistas || [];
+        if (!user.conquistas.includes('perfeito')) {
+            user.conquistas.push('perfeito');
+            notificar('🏆 Conquista: PERFEITO! 100% de acerto!', '#ffd700');
+            ganharXp(200);
+        }
+        setTimeout(() => iniciarCelebracao('perfeito'), 300);
+    } else if (pct >= 70) {
+        setTimeout(() => iniciarCelebracao('excelente'), 300);
+    } else if (pct >= 40) {
+        setTimeout(() => iniciarCelebracao('bom'), 300);
     }
 
-    let mensagem = "Tente novamente!";
-    if (pct >= 90) mensagem = "🌟 LENDÁRIO!";
-    else if (pct >= 80) mensagem = "✨ Excelente!";
-    else if (pct >= 60) mensagem = "🔥 Muito bom!";
-    else if (pct >= 40) mensagem = "👍 Bom!";
+    verificarConquistas();
+    salvarUser();
+}
 
-    const xpGanho = perfeito ? 'Dobrado!' : '';
-    document.getElementById("quizContainer").innerHTML = `
-        <div class="fim-quiz">
-            <h2>${mensagem}</h2>
-            <p class="fim-pontuacao">Você acertou ${pontuacao} de ${total}</p>
-            <p class="fim-pct">${pct}% de aproveitamento ${xpGanho ? '<br>⭐ Bônus 100%: XP e Moedas dobrados!' : ''}</p>
-            <button onclick="resetarQuiz()" class="btn-reiniciar">Jogar Novamente</button>
-        </div>
-    `;
-    atualizarHUD();
+function sairDoQuiz() {
+    if (quizAtivo && !confirm('Tem certeza que deseja sair? Seu progresso neste quiz sera perdido.')) return;
+    resetarQuiz();
 }
 
 function resetarQuiz() {
-    document.getElementById('quizContainer').innerHTML = `
-        <h1>🎮 Quiz Masters</h1>
-        <div class="barra-progresso"><div id="progresso"></div></div>
-        <div class="header-info">
-            <span id="contador">Questão 1 de 20</span>
-            <span id="pontuacaoParcial">Acertos: 0</span>
-        </div>
-        <p id="pergunta"></p>
-        <div id="opcoes"></div>
-        <p id="resultado"></p>
-        <button onclick="proximaPergunta()" id="btnProximo">Próxima ➜</button>
-    `;
+    const innerHTML = '<div class="quiz-topo"><button onclick="sairDoQuiz()" class="btn-voltar">⬅ Voltar</button><h1>🎮 Quiz Masters</h1></div>' +
+        '<div class="barra-progresso"><div id="progresso"></div></div>' +
+        '<div class="quiz-badges">' +
+            '<span id="generoBadge" class="genero-badge" style="display:none"></span>' +
+            '<span id="dificuldadeBadge" class="dificuldade-badge" style="display:none"></span>' +
+        '</div>' +
+        '<div id="timerContainer" class="timer-container" style="display:none">' +
+            '<div id="timerBar" class="timer-bar"></div>' +
+            '<span id="timerTexto" class="timer-texto"></span>' +
+        '</div>' +
+        '<div class="header-info">' +
+            '<span id="contador">Questao 1 de 20</span>' +
+            '<span id="pontuacaoParcial">Acertos: 0</span>' +
+        '</div>' +
+        '<p id="pergunta"></p>' +
+        '<div id="opcoes"></div>' +
+        '<p id="resultado"></p>' +
+        '<button onclick="proximaPergunta()" id="btnProximo">Proxima ➜</button>';
+    document.getElementById('quizContainer').innerHTML = innerHTML;
     quizAtivo = false;
     poderUsado = false;
     poderEfeito = null;
+    pararTimer();
     document.getElementById('generoSelecao').style.display = 'block';
     document.getElementById('quizContainer').style.display = 'none';
     mostrarAba('Quiz');
     vidas = 3;
     atualizarVidas();
+    renderizarGeneros();
 }
 
-// ===== SISTEMA DE PODER =====
+// ===== TIMER SYSTEM =====
+function iniciarTimer(dificuldade) {
+    pararTimer();
+    const tempoTotal = (TEMPO_POR_DIFICULDADE[dificuldade] || 20) + getTimerBonusPassiva();
+    tempoRestante = tempoTotal;
+    tempoResposta = 0;
+    
+    const timerContainer = document.getElementById('timerContainer');
+    const timerBar = document.getElementById('timerBar');
+    const timerTexto = document.getElementById('timerTexto');
+    
+    if (!timerBar || !timerTexto) return;
+    
+    timerContainer.style.display = 'flex';
+    timerBar.style.width = '100%';
+    timerBar.style.background = 'linear-gradient(90deg, #4ade80, #fbbf24)';
+    timerTexto.innerText = tempoTotal + 's';
+    
+    const startTime = Date.now();
+    timerInterval = setInterval(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const remaining = Math.max(0, tempoTotal - elapsed);
+        tempoRestante = Math.ceil(remaining);
+        tempoResposta = elapsed;
+        
+        const pct = (remaining / tempoTotal) * 100;
+        timerBar.style.width = pct + '%';
+        timerTexto.innerText = Math.ceil(remaining) + 's';
+        
+        if (pct < 30) timerBar.style.background = 'linear-gradient(90deg, #f87171, #ef4444)';
+        else if (pct < 60) timerBar.style.background = 'linear-gradient(90deg, #fbbf24, #f59e0b)';
+        
+        if (remaining <= 0) {
+            pararTimer();
+            if (!perguntaRespondida && quizAtivo) {
+                const botoes = document.querySelectorAll('.opcao');
+                botoes.forEach(b => b.disabled = true);
+                const item = perguntas[perguntaAtual];
+                if (item) {
+                    botoes.forEach((b, i) => { if (i === item.correta) b.classList.add('correta'); });
+                    document.getElementById('resultado').innerText = 'Tempo esgotado! Resposta: ' + item.opcoes[item.correta];
+                    document.getElementById('resultado').style.color = '#f87171';
+                }
+                document.getElementById('btnProximo').style.display = 'inline-block';
+                user.totalPerguntas++;
+                user.streak = 0;
+                ganharMoedas(MOEDAS_ERRO);
+                perguntaRespondida = true;
+                perderVida();
+                atualizarHUD();
+                salvarUser();
+            }
+        }
+    }, 100);
+}
+
+function pararTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+    const timerContainer = document.getElementById('timerContainer');
+    const timerBar = document.getElementById('timerBar');
+    if (timerContainer) timerContainer.style.display = 'none';
+    if (timerBar) timerBar.style.width = '0%';
+}
+
+// ===== ACHIEVEMENT SYSTEM =====
+function verificarConquistas() {
+    user.conquistas = user.conquistas || [];
+    conquistas.forEach(c => {
+        if (c.especial) return;
+        if (user.conquistas.includes(c.id)) return;
+        if (c.condicao(user)) {
+            user.conquistas.push(c.id);
+            notificar('🏆 Conquista: ' + c.nome + '! ' + c.desc, '#ffd700');
+            ganharXp(c.recompensaXP);
+        }
+    });
+    const generosSemTodos = Object.keys(generos).filter(g => g !== 'todos');
+    const generosJogadosSemTodos = generosJogados.filter(g => g !== 'todos');
+    if (!user.conquistas.includes('todos_generos') && generosJogadosSemTodos.length >= generosSemTodos.length) {
+        user.conquistas.push('todos_generos');
+        notificar('🏆 Conquista: Explorador! Jogou em todos os generos!', '#ffd700');
+        ganharXp(500);
+    }
+}
+
+// ===== POWER SYSTEM =====
 function usarPoder() {
-    if (poderUsado || !quizAtivo || perguntaRespondida) return;
+    if (!quizAtivo || perguntaRespondida || poderUsosRestantes <= 0) return;
     const personId = user.equipado.personagem;
     if (!personId || !poderesDisponiveis[personId]) return;
     const poder = poderesDisponiveis[personId];
-    poderUsado = true;
-    const btnPoder = document.getElementById('btnPoder');
-    if (btnPoder) btnPoder.remove();
+    poderUsosRestantes--;
+    const btn = document.getElementById('btnPoder');
+    if (btn) btn.disabled = poderUsosRestantes <= 0;
 
-    const res = document.getElementById("resultado");
+    if (!user.poderesUsados.includes(personId)) {
+        user.poderesUsados.push(personId);
+        if (!user.conquistas.includes('poder_usado')) {
+            user.conquistas.push('poder_usado');
+            notificar('🏆 Conquista: Poderoso! Usou um poder pela primeira vez!', '#ffd700');
+            ganharXp(100);
+        }
+        if (user.poderesUsados.length >= Object.keys(poderesDisponiveis).length && !user.conquistas.includes('todos_poderes')) {
+            user.conquistas.push('todos_poderes');
+            notificar('🏆 Conquista: Colecionador de Poderes! Usou todos os poderes!', '#ffd700');
+            ganharXp(2000);
+        }
+        salvarUser();
+    }
+
+    const item = perguntas[perguntaAtual];
+    const botoes = document.querySelectorAll('.opcao');
+
+    const corExplosao = poder.cor || '#9b59b6';
 
     switch (poder.tipo) {
         case 'xp_bonus':
             poderEfeito = 'xp_bonus';
-            res.innerText = `🍃 ${poder.nome} ativado! +50 XP no próximo acerto!`;
-            res.style.color = "#4ade80";
+            animarPoderPersonagem(personId);
+            notificar('🍃 Modo Sabio ativado! +50 XP no proximo acerto!', '#f7971e');
             break;
 
-        case 'eliminar_opcoes':
-            const item = perguntas[perguntaAtual];
-            const botoes = document.querySelectorAll(".opcao");
-            const erradas = [];
-            botoes.forEach((b, i) => { if (i !== item.correta && !b.classList.contains('eliminada')) erradas.push(b); });
-            embaralhar(erradas).slice(0, 2).forEach(b => {
-                b.classList.add('eliminada');
-                b.disabled = true;
-                b.innerText = '❌';
+        case 'eliminar_opcoes': {
+            let eliminadas = 0;
+            const indices = [];
+            for (let i = 0; i < item.opcoes.length; i++) {
+                if (i !== item.correta) indices.push(i);
+            }
+            embaralhar(indices);
+            const alvos = indices.slice(0, 2);
+            alvos.forEach(i => {
+                botoes[i].classList.add('eliminada');
+                botoes[i].disabled = true;
+                eliminadas++;
             });
-            res.innerText = `⚡ ${poder.nome}! 2 opções eliminadas!`;
-            res.style.color = "#f7971e";
+            animarPoderPersonagem(personId);
+            notificar('⚡ Kamehameha! 2 opcoes erradas foram eliminadas!', '#3b82f6');
             break;
+        }
 
         case 'pular_questao':
+            pararTimer();
             perguntaRespondida = true;
-            res.innerText = `🪨 ${poder.nome}! Pulando questão...`;
-            res.style.color = "#4ade80";
             pontuacao++;
             user.totalAcertos++;
             user.totalPerguntas++;
-            setTimeout(() => proximaPergunta(), 800);
+            if (!user.perguntasRespondidas[item.cat]) user.perguntasRespondidas[item.cat] = [];
+            const genPular = generos[item.cat];
+            if (genPular) {
+                const origIdxPular = genPular.perguntas.indexOf(item);
+                if (origIdxPular !== -1 && !user.perguntasRespondidas[item.cat].includes(origIdxPular)) {
+                    user.perguntasRespondidas[item.cat].push(origIdxPular);
+                }
+            }
+            botoes.forEach(b => b.disabled = true);
+            botoes[item.correta].classList.add('correta');
+            animarPoderPersonagem(personId);
+            notificar('🪨 Gomu Gomu! Questao destruida automaticamente!', '#ef4444');
+            document.getElementById('resultado').innerText = 'Gomu Gomu no Pistol!';
+            document.getElementById('resultado').style.color = '#ef4444';
+            document.getElementById('btnProximo').style.display = 'inline-block';
             break;
 
-        case 'revelar_resposta':
-            const item2 = perguntas[perguntaAtual];
-            const botoes2 = document.querySelectorAll(".opcao");
-            botoes2.forEach((b, i) => {
-                if (i === item2.correta) b.classList.add('revelada');
-            });
-            res.innerText = `⚡ ${poder.nome}! Resposta revelada!`;
-            res.style.color = "#ffd200";
+        case 'revelar_resposta': {
+            animarPoderPersonagem(personId);
+            notificar('⚡ Choque do Trovao! Resposta revelada por 2s!', '#9b59b6');
+            botoes[item.correta].classList.add('revelada');
             setTimeout(() => {
-                botoes2.forEach(b => b.classList.remove('revelada'));
+                botoes[item.correta].classList.remove('revelada');
             }, 2000);
             break;
-
-        case 'revelar_tempo':
-            const item3 = perguntas[perguntaAtual];
-            const botoes3 = document.querySelectorAll(".opcao");
-            botoes3.forEach((b, i) => {
-                if (i === item3.correta) b.classList.add('revelada');
-            });
-            res.innerText = `🔮 ${poder.nome}! Resposta revelada!`;
-            res.style.color = "#9b59b6";
-            setTimeout(() => {
-                botoes3.forEach(b => b.classList.remove('revelada'));
-            }, 3000);
-            break;
-
-        case 'passar_questao':
-            perguntaRespondida = true;
-            const canvas = document.getElementById('animacaoCanvas');
-            canvas.classList.add('ativo');
-            const ctx = canvas.getContext('2d');
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            const item4 = perguntas[perguntaAtual];
-            const corretaIdx = item4.correta;
-            const cx = canvas.width / 2, cy = canvas.height / 2;
-            let explTempo = 0;
-            function animarExplosao() {
-                if (explTempo > 40) {
-                    canvas.classList.remove('ativo');
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    // Auto-answer correctly
-                    const botoes4 = document.querySelectorAll(".opcao");
-                    botoes4.forEach((b, i) => {
-                        b.disabled = true;
-                        if (i === corretaIdx) b.classList.add("correta");
-                    });
-                    pontuacao++;
-                    user.totalAcertos++;
-                    user.totalPerguntas++;
-                    user.streak++;
-                    if (user.streak > user.maxStreak) user.maxStreak = user.streak;
-                    ganharXp(XP_BASE);
-                    ganharMoedas(MOEDAS_ACERTO);
-                    res.innerText = `💜 ROXO! Questão destruída! Correto: ${item4.opcoes[corretaIdx]}`;
-                    res.style.color = "#9b59b6";
-                    document.getElementById("btnProximo").style.display = "inline-block";
-                    return;
-                }
-                explTempo++;
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                const r = 10 + explTempo * 12;
-                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-                grad.addColorStop(0, 'rgba(155,89,182,0.8)');
-                grad.addColorStop(0.3, 'rgba(142,68,173,0.5)');
-                grad.addColorStop(0.6, 'rgba(231,76,60,0.3)');
-                grad.addColorStop(1, 'rgba(0,0,0,0)');
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                // inner glow
-                const grad2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.3);
-                grad2.addColorStop(0, 'rgba(255,255,255,0.9)');
-                grad2.addColorStop(1, 'rgba(155,89,182,0)');
-                ctx.fillStyle = grad2;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                // particles
-                for (let i = 0; i < 5; i++) {
-                    const a = Math.random() * Math.PI * 2;
-                    const dist = Math.random() * r * 0.8;
-                    ctx.fillStyle = ['#9b59b6','#8e44ad','#e74c3c','#fff'][Math.floor(Math.random()*4)];
-                    ctx.beginPath();
-                    ctx.arc(cx + Math.cos(a) * dist, cy + Math.sin(a) * dist, Math.random() * 4 + 2, 0, Math.PI*2);
-                    ctx.fill();
-                }
-                requestAnimationFrame(animarExplosao);
-            }
-            animarExplosao();
-            res.innerText = `💜 ${poder.nome}!! Carregando...`;
-            res.style.color = "#9b59b6";
-            break;
+        }
 
         case 'curar_vida':
+            animarPoderPersonagem(personId);
             if (vidas < 3) {
                 vidas++;
                 atualizarVidas();
-                res.innerText = `🌊 ${poder.nome}! +1 vida recuperada!`;
+                notificar('🌊 Respiracao da Agua! Vida recuperada!', '#9b59b6');
             } else {
-                res.innerText = `🌊 ${poder.nome}! Vidas já estão cheias!`;
+                notificar('🌊 Respiracao da Agua! Voce ja esta com todas as vidas!', '#9b59b6');
+                poderUsado = false;
+                if (btn) btn.disabled = false;
             }
-            res.style.color = "#4ade80";
+            break;
+
+        case 'passar_questao':
+            pararTimer();
+            perguntaRespondida = true;
+            pontuacao++;
+            user.totalAcertos++;
+            user.totalPerguntas++;
+            if (!user.perguntasRespondidas[item.cat]) user.perguntasRespondidas[item.cat] = [];
+            const genPass = generos[item.cat];
+            if (genPass) {
+                const origIdxPass = genPass.perguntas.indexOf(item);
+                if (origIdxPass !== -1 && !user.perguntasRespondidas[item.cat].includes(origIdxPass)) {
+                    user.perguntasRespondidas[item.cat].push(origIdxPass);
+                }
+            }
+            botoes.forEach(b => b.disabled = true);
+            botoes[item.correta].classList.add('correta');
+            animarPoderPersonagem(personId);
+            notificar('💜 Hollow Purple! Questao passada automaticamente!', '#9b59b6');
+            document.getElementById('resultado').innerText = 'Passada com Hollow Purple!';
+            document.getElementById('resultado').style.color = '#9b59b6';
+            document.getElementById('btnProximo').style.display = 'inline-block';
+            break;
+
+        case 'moedas_dobradas':
+            poderEfeito = 'moedas_dobradas';
+            animarPoderPersonagem(personId);
+            notificar('🗡️ Laminas Titanicas! Moedas dobradas no proximo acerto!', '#9b59b6');
             break;
 
         case 'curar_tudo':
             vidas = 3;
             atualizarVidas();
-            res.innerText = `🌙 ${poder.nome}! Todas as vidas restauradas!`;
-            res.style.color = "#4ade80";
-            break;
-
-        case 'moedas_dobradas':
-            poderEfeito = 'moedas_dobradas';
-            res.innerText = `🗡️ ${poder.nome}! Moedas dobradas no próximo acerto!`;
-            res.style.color = "#ffd200";
+            animarPoderPersonagem(personId);
+            notificar('🌙 Moon Healing! Todas as vidas restauradas!', '#9b59b6');
             break;
 
         case 'xp_triplo':
             poderEfeito = 'xp_triplo';
-            res.innerText = `💥 ${poder.nome}! XP triplicado no próximo acerto!`;
-            res.style.color = "#f7971e";
+            animarPoderPersonagem(personId);
+            notificar('💥 Final Flash! XP triplicado no proximo acerto!', '#14b8a6');
             break;
+
+        case 'revelar_tempo': {
+            animarPoderPersonagem(personId);
+            notificar('🔮 Tsukuyomi! Resposta revelada por 3s!', '#f87171');
+            botoes[item.correta].classList.add('revelada');
+            setTimeout(() => {
+                botoes[item.correta].classList.remove('revelada');
+            }, 3000);
+            break;
+        }
+
+        default:
+            notificar('Poder desconhecido!', '#f87171');
+            poderUsado = false;
+            if (btn) btn.disabled = false;
     }
-    atualizarHUD();
-    atualizarCharWidget();
 }
 
-// ===== ANIMAÇÃO 100% =====
-function iniciarAnimacaoPerfeito() {
+function getRankMultiplicador() {
+    const rankId = user.equipado.rank;
+    if (!rankId) return 1;
+    const rank = lojaRanks.find(r => r.id === rankId);
+    return rank ? rank.mult : 1;
+}
+
+// ===== ANIMATION =====
+function iniciarCelebracao(tipo) {
     const canvas = document.getElementById('animacaoCanvas');
+    if (!canvas) return;
     canvas.classList.add('ativo');
     const ctx = canvas.getContext('2d');
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
+    const configs = {
+        perfeito: { qtd: 250, duracao: 5000, texto: '⭐ PERFEITO! ⭐', corTexto: '#ffd700', explosao: true },
+        excelente: { qtd: 120, duracao: 3500, texto: '🎉 EXCELENTE! 🎉', corTexto: '#4ade80', explosao: true },
+        bom: { qtd: 60, duracao: 2500, texto: '👏 BOM TRABALHO! 👏', corTexto: '#3b82f6', explosao: false }
+    };
+    const cfg = configs[tipo] || configs.bom;
+
+    const cores = ['#ffd700', '#f7971e', '#ff6b6b', '#4ade80', '#3b82f6', '#ec4899', '#a855f7', '#14b8a6', '#fff', '#fbbf24'];
+    const formas = ['rect', 'circle', 'star'];
     const particles = [];
-    const fireworks = [];
-    const confettis = [];
-    let tempo = 0;
-    let animacaoAtiva = true;
+    const duracao = cfg.duracao;
+    const start = Date.now();
 
-    // Firework colors
-    const cores = ['#ff0', '#f0f', '#0ff', '#f00', '#0f0', '#00f', '#ffd700', '#ff69b4', '#ff4500', '#7fff00'];
+    function criarParticula(x, y, explosao) {
+        const angle = explosao ? Math.random() * Math.PI * 2 : -Math.PI / 2 + (Math.random() - 0.5) * Math.PI;
+        const speed = explosao ? Math.random() * 12 + 4 : Math.random() * 6 + 2;
+        return {
+            x: x || Math.random() * canvas.width,
+            y: y || canvas.height + 30,
+            vx: Math.cos(angle) * speed * (explosao ? 1 : (Math.random() * 0.5 + 0.5)),
+            vy: Math.sin(angle) * speed * (explosao ? 1 : -(Math.random() * 0.5 + 0.5)),
+            size: Math.random() * 7 + 2,
+            cor: cores[Math.floor(Math.random() * cores.length)],
+            forma: formas[Math.floor(Math.random() * formas.length)],
+            rot: Math.random() * Math.PI * 2,
+            rotV: (Math.random() - 0.5) * 0.3,
+            gravidade: explosao ? 0.08 : 0.05,
+        };
+    }
 
-    class Particle {
-        constructor(x, y, cor) {
-            this.x = x; this.y = y;
-            const a = Math.random() * Math.PI * 2;
-            const v = Math.random() * 6 + 2;
-            this.vx = Math.cos(a) * v;
-            this.vy = Math.sin(a) * v;
-            this.cor = cor;
-            this.vida = 1;
-            this.dec = Math.random() * 0.02 + 0.008;
-            this.r = Math.random() * 3 + 1;
-            this.gravity = 0.05;
+    for (let i = 0; i < cfg.qtd; i++) {
+        particles.push(criarParticula(null, null, false));
+    }
+
+    if (cfg.explosao) {
+        for (let i = 0; i < cfg.qtd * 0.4; i++) {
+            setTimeout(() => {
+                particles.push(criarParticula(
+                    Math.random() * canvas.width * 0.6 + canvas.width * 0.2,
+                    Math.random() * canvas.height * 0.4 + canvas.height * 0.2,
+                    true
+                ));
+            }, Math.random() * cfg.duracao * 0.5);
         }
-        update() {
-            this.x += this.vx;
-            this.y += this.vy;
-            this.vy += this.gravity;
-            this.vx *= 0.98;
-            this.vy *= 0.98;
-            this.vida -= this.dec;
-        }
-        draw(ctx) {
-            ctx.globalAlpha = Math.max(0, this.vida);
-            ctx.fillStyle = this.cor;
+    }
+
+    function desenharParticula(p) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = p.cor;
+        ctx.shadowColor = p.cor;
+        ctx.shadowBlur = p.size * 2;
+
+        const s = p.size;
+        if (p.forma === 'circle') {
             ctx.beginPath();
-            ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+            ctx.arc(0, 0, s / 2, 0, Math.PI * 2);
             ctx.fill();
-            ctx.globalAlpha = 1;
-        }
-    }
-
-    class Firework {
-        constructor() {
-            this.x = Math.random() * canvas.width * 0.8 + canvas.width * 0.1;
-            this.y = canvas.height + 10;
-            const alvoY = Math.random() * canvas.height * 0.4 + canvas.height * 0.1;
-            this.vy = -Math.abs((this.y - alvoY) / 60);
-            this.ativo = true;
-            this.cor = cores[Math.floor(Math.random() * cores.length)];
-            this.rastro = [];
-        }
-        update() {
-            this.rastro.push({ x: this.x, y: this.y });
-            if (this.rastro.length > 8) this.rastro.shift();
-            this.y += this.vy;
-            this.vy *= 0.99;
-            if (this.vy > -0.5) {
-                this.ativo = false;
-                explodir(this.x, this.y, this.cor);
-            }
-        }
-        draw(ctx) {
-            for (let i = 0; i < this.rastro.length; i++) {
-                const a = i / this.rastro.length;
-                ctx.globalAlpha = a * 0.5;
-                ctx.fillStyle = this.cor;
-                ctx.beginPath();
-                ctx.arc(this.rastro[i].x, this.rastro[i].y, 2 * a, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            ctx.globalAlpha = 1;
-            ctx.fillStyle = '#fff';
+        } else if (p.forma === 'star') {
             ctx.beginPath();
-            ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
-            ctx.fill();
-        }
-    }
-
-    function explodir(x, y, cor) {
-        const qtd = Math.floor(Math.random() * 30) + 25;
-        for (let i = 0; i < qtd; i++) {
-            particles.push(new Particle(x, y, cor));
-        }
-        // secondary explosion
-        setTimeout(() => {
-            if (!animacaoAtiva) return;
-            for (let i = 0; i < 15; i++) {
-                const p = new Particle(x, y, cores[Math.floor(Math.random() * cores.length)]);
-                const a = Math.random() * Math.PI * 2;
-                const v = Math.random() * 3 + 1;
-                p.vx = Math.cos(a) * v;
-                p.vy = Math.sin(a) * v;
-                p.r = Math.random() * 2 + 0.5;
-                particles.push(p);
+            for (let i = 0; i < 5; i++) {
+                const a = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+                ctx[i === 0 ? 'moveTo' : 'lineTo'](Math.cos(a) * s / 2, Math.sin(a) * s / 2);
             }
-        }, 150);
-    }
-
-    class Confetti {
-        constructor() {
-            this.x = Math.random() * canvas.width;
-            this.y = -10;
-            this.w = Math.random() * 8 + 4;
-            this.h = Math.random() * 6 + 3;
-            this.vy = Math.random() * 2 + 1.5;
-            this.vx = (Math.random() - 0.5) * 1.5;
-            this.cor = cores[Math.floor(Math.random() * cores.length)];
-            this.rot = Math.random() * Math.PI * 2;
-            this.rotV = (Math.random() - 0.5) * 0.1;
+            ctx.closePath();
+            ctx.fill();
+        } else {
+            ctx.fillRect(-s / 2, -s / 2, s, s);
         }
-        update() {
-            this.y += this.vy;
-            this.x += this.vx;
-            this.rot += this.rotV;
-            this.vy += 0.01;
-        }
-        draw(ctx) {
-            ctx.save();
-            ctx.translate(this.x, this.y);
-            ctx.rotate(this.rot);
-            ctx.fillStyle = this.cor;
-            ctx.globalAlpha = 0.85;
-            ctx.fillRect(-this.w / 2, -this.h / 2, this.w, this.h);
-            ctx.globalAlpha = 1;
-            ctx.restore();
-        }
-    }
-
-    // Spawn confetti
-    for (let i = 0; i < 60; i++) {
-        const c = new Confetti();
-        c.y = Math.random() * canvas.height;
-        c.vy = Math.random() * 1.5 + 0.5;
-        confettis.push(c);
-    }
-
-    // Initial fireworks
-    for (let i = 0; i < 5; i++) {
-        setTimeout(() => {
-            if (animacaoAtiva) fireworks.push(new Firework());
-        }, i * 300);
+        ctx.restore();
     }
 
     function animar() {
-        if (!animacaoAtiva) return;
-        tempo++;
+        const elapsed = Date.now() - start;
+        if (elapsed > duracao) {
+            canvas.classList.remove('ativo');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            return;
+        }
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const alpha = elapsed < 300 ? elapsed / 300 : 1;
 
-        // Screen flash effect on first frame
-        if (tempo < 15) {
-            ctx.fillStyle = `rgba(255,255,255,${0.15 * (1 - tempo / 15)})`;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        particles.forEach(p => {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += p.gravidade;
+            p.vx *= 0.99;
+            p.rot += p.rotV;
+
+            if (p.y > canvas.height + 50) {
+                p.y = canvas.height + 30;
+                p.x = Math.random() * canvas.width;
+                p.vy = -(Math.random() * 6 + 3);
+            }
+            if (p.x < -50) p.x = canvas.width + 20;
+            if (p.x > canvas.width + 50) p.x = -20;
+
+            desenharParticula(p);
+        });
+
+        if (cfg.texto) {
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.85;
+            ctx.fillStyle = cfg.corTexto;
+            ctx.font = 'bold 52px Segoe UI';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowColor = cfg.corTexto;
+            ctx.shadowBlur = 40;
+            const pulseScale = 1 + Math.sin(elapsed * 0.003) * 0.05;
+            ctx.setTransform(pulseScale, 0, 0, pulseScale, canvas.width / 2, canvas.height / 2);
+            ctx.fillText(cfg.texto, 0, 0);
+            ctx.restore();
         }
-
-        // Spawn new fireworks
-        if (tempo % 20 === 0 && tempo < 180) {
-            fireworks.push(new Firework());
-        }
-        if (tempo % 35 === 0 && tempo < 240) {
-            for (let i = 0; i < 2; i++) fireworks.push(new Firework());
-        }
-
-        // Spawn confetti waves
-        if (tempo % 15 === 0 && tempo < 300) {
-            for (let i = 0; i < 5; i++) confettis.push(new Confetti());
-        }
-
-        fireworks.forEach(fw => { fw.update(); fw.draw(ctx); });
-        fireworks = fireworks.filter(fw => fw.ativo || false);
-
-        particles.forEach(p => { p.update(); p.draw(ctx); });
-        particles = particles.filter(p => p.vida > 0);
-
-        confettis.forEach(c => { c.update(); c.draw(ctx); });
-        confettis = confettis.filter(c => c.y < canvas.height + 20);
-
-        // Text
-        const pctTempo = Math.min(tempo / 60, 1);
-        const escala = 0.5 + 0.5 * Math.sin(tempo * 0.05) * 0.1;
-        const textY = canvas.height / 2 - 40 + (1 - pctTempo) * 30;
-
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-
-        // Glow
-        ctx.shadowColor = '#ffd700';
-        ctx.shadowBlur = 30 + Math.sin(tempo * 0.1) * 10;
-
-        const fontSize = 42 + Math.sin(tempo * 0.08) * 3;
-        ctx.font = `900 ${fontSize}px 'Segoe UI', sans-serif`;
-
-        // Gradient text
-        const grad = ctx.createLinearGradient(canvas.width / 2 - 200, textY - 30, canvas.width / 2 + 200, textY + 30);
-        grad.addColorStop(0, '#ffd700');
-        grad.addColorStop(0.5, '#fff');
-        grad.addColorStop(1, '#ffd700');
-        ctx.fillStyle = grad;
-
-        ctx.fillText('⭐ PERFEITO! ⭐', canvas.width / 2, textY);
-
-        // Subtitle
-        ctx.shadowBlur = 15;
-        ctx.font = `700 22px 'Segoe UI', sans-serif`;
-        ctx.fillStyle = 'rgba(255,255,255,0.8)';
-        ctx.fillText('100% - Recompensa Dobrada!', canvas.width / 2, textY + 55);
-
-        ctx.restore();
 
         requestAnimationFrame(animar);
     }
 
     animar();
-
-    setTimeout(() => {
-        animacaoAtiva = false;
-        canvas.classList.remove('ativo');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }, 6000);
-
-    window.addEventListener('resize', () => {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    });
 }
 
-// ===== NAVEGAÇÃO E UI =====
+// ===== POWER ANIMATION =====
+function animarPoderPersonagem(personagemId) {
+    const canvas = document.getElementById('animacaoCanvas');
+    if (!canvas) return;
+    canvas.classList.add('ativo');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const widget = document.getElementById('charWidget');
+    let startX = 120, startY = canvas.height / 2;
+    if (widget) {
+        const rect = widget.getBoundingClientRect();
+        startX = rect.right;
+        startY = rect.top + rect.height / 2;
+    }
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const duracao = 2500;
+    const start = Date.now();
+    const item = perguntas[perguntaAtual];
+    const botoes = document.querySelectorAll('.opcao');
+    const opcoesEl = document.getElementById('opcoes');
+    let opcoesRect = null;
+    if (opcoesEl) opcoesRect = opcoesEl.getBoundingClientRect();
+
+    function drawCircle(x, y, r, cor, blur) {
+        ctx.save();
+        ctx.fillStyle = cor;
+        ctx.shadowColor = cor;
+        ctx.shadowBlur = blur || 20;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 6.28);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    function animar() {
+        const elapsed = Date.now() - start;
+        const progress = Math.min(1, elapsed / duracao);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        switch (personagemId) {
+            case 'naruto': {
+                const rPhase = progress < 0.3 ? 0 : progress < 0.55 ? 1 : 2;
+                const pp = rPhase === 0 ? progress / 0.3 : rPhase === 1 ? (progress - 0.3) / 0.25 : (progress - 0.55) / 0.45;
+                if (rPhase === 0) {
+                    const orbX = startX + 20, orbY = startY;
+                    const r = 5 + pp * 20;
+                    drawCircle(orbX, orbY, r, 'rgba(102, 217, 255, ' + (0.8 - pp * 0.3) + ')', 30);
+                    drawCircle(orbX, orbY, r * 0.5, 'rgba(255,255,255,0.9)', 40);
+                    ctx.save();
+                    ctx.strokeStyle = '#66d9ff';
+                    ctx.lineWidth = 2;
+                    for (let i = 0; i < 4; i++) {
+                        const a = pp * 8 + i * 1.57;
+                        ctx.beginPath();
+                        ctx.arc(orbX, orbY, r * 0.7 + Math.sin(a) * 5, 0, 6.28);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                } else if (rPhase === 1) {
+                    const fromX = startX + 20, fromY = startY;
+                    const toX = cx, toY = cy;
+                    const curX = fromX + (toX - fromX) * pp;
+                    const curY = fromY + (toY - fromY) * pp;
+                    const r = 15 - pp * 5;
+                    drawCircle(curX, curY, r, 'rgba(102, 217, 255, 0.7)', 30);
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(102, 217, 255, ' + (0.5 * (1 - pp)) + ')';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(fromX, fromY);
+                    ctx.lineTo(curX, curY);
+                    ctx.stroke();
+                    ctx.restore();
+                } else {
+                    const impactX = cx, impactY = cy;
+                    for (let i = 0; i < 30; i++) {
+                        const a = Math.random() * 6.28;
+                        const d = pp * 120 + Math.random() * 60;
+                        const size = 2 + Math.random() * 6;
+                        ctx.save();
+                        ctx.globalAlpha = (1 - pp * 1.2) * 0.8;
+                        ctx.fillStyle = '#66d9ff';
+                        ctx.shadowColor = '#66d9ff';
+                        ctx.shadowBlur = 10;
+                        ctx.beginPath();
+                        ctx.moveTo(impactX, impactY);
+                        ctx.lineTo(impactX + Math.cos(a) * d + (Math.random() - 0.5) * 20, impactY + Math.sin(a) * d + (Math.random() - 0.5) * 20);
+                        ctx.lineWidth = size;
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                    drawCircle(impactX, impactY, 15 * (1 - pp), 'rgba(255,255,255,' + (0.5 * (1 - pp)) + ')', 40);
+                }
+                break;
+            }
+            case 'goku': {
+                const rPhase = progress < 0.3 ? 0 : progress < 0.55 ? 1 : 2;
+                const pp = rPhase === 0 ? progress / 0.3 : rPhase === 1 ? (progress - 0.3) / 0.25 : (progress - 0.55) / 0.45;
+                if (rPhase === 0) {
+                    for (let i = 0; i < 20; i++) {
+                        const a = Math.random() * 6.28;
+                        const d = 10 + pp * 60;
+                        const x = startX + Math.cos(a) * d;
+                        const y = startY + Math.sin(a) * d;
+                        ctx.save();
+                        ctx.globalAlpha = 0.6;
+                        ctx.fillStyle = '#60a5fa';
+                        ctx.shadowColor = '#60a5fa';
+                        ctx.shadowBlur = 15;
+                        ctx.beginPath();
+                        ctx.arc(x, y, 2 + Math.random() * 3, 0, 6.28);
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                    drawCircle(startX, startY, 5 + pp * 25, 'rgba(96, 165, 250, ' + (0.3 + pp * 0.3) + ')', 40);
+                } else if (rPhase === 1) {
+                    ctx.save();
+                    ctx.shadowColor = '#60a5fa';
+                    ctx.shadowBlur = 50;
+                    ctx.strokeStyle = 'rgba(96, 165, 250, 0.9)';
+                    ctx.lineWidth = 15 + pp * 8;
+                    ctx.beginPath();
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(startX + (cx - startX) * pp, startY + (cy - startY) * pp * 0.3);
+                    ctx.stroke();
+                    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+                    ctx.lineWidth = 5;
+                    ctx.beginPath();
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(startX + (cx - startX) * pp, startY + (cy - startY) * pp * 0.3);
+                    ctx.stroke();
+                    ctx.restore();
+                    for (let i = 0; i < 8; i++) {
+                        const a = Math.random() * 6.28;
+                        const d = 10 + pp * 30;
+                        drawCircle(startX + (cx - startX) * pp + Math.cos(a) * d, startY + (cy - startY) * pp * 0.3 + Math.sin(a) * d, 2 + Math.random() * 4, 'rgba(96, 165, 250, 0.6)', 10);
+                    }
+                } else {
+                    botoes.forEach((btn, i) => {
+                        if (btn.disabled) {
+                            const r = btn.getBoundingClientRect();
+                            const bx = r.left + r.width / 2, by = r.top + r.height / 2;
+                            for (let j = 0; j < 10; j++) {
+                                const a = Math.random() * 6.28;
+                                const d = pp * 80;
+                                ctx.save();
+                                ctx.globalAlpha = (1 - pp) * 0.8;
+                                ctx.fillStyle = '#60a5fa';
+                                ctx.shadowColor = '#60a5fa';
+                                ctx.shadowBlur = 15;
+                                ctx.beginPath();
+                                ctx.arc(bx + Math.cos(a) * d, by + Math.sin(a) * d, 3 + Math.random() * 4, 0, 6.28);
+                                ctx.fill();
+                                ctx.restore();
+                            }
+                            drawCircle(bx, by, 15 * (1 - pp), 'rgba(255,255,255,' + (0.4 * (1 - pp)) + ')', 30);
+                        }
+                    });
+                }
+                break;
+            }
+            case 'luffy': {
+                const rPhase = progress < 0.25 ? 0 : progress < 0.5 ? 1 : 2;
+                const pp = rPhase === 0 ? progress / 0.25 : rPhase === 1 ? (progress - 0.25) / 0.25 : (progress - 0.5) / 0.5;
+                if (rPhase === 0) {
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 8]);
+                    const armLen = pp * 100;
+                    ctx.beginPath();
+                    ctx.moveTo(startX + 30, startY);
+                    ctx.lineTo(startX + 30 - armLen, startY - 10);
+                    ctx.stroke();
+                    ctx.restore();
+                    drawCircle(startX + 30 - pp * 100, startY - 10, 12 + pp * 2, '#ff6b35', 20);
+                } else if (rPhase === 1) {
+                    const fromX = startX + 30 - 100, fromY = startY - 10;
+                    const fistX = fromX + (cx - fromX) * pp;
+                    const fistY = fromY + (cy - fromY) * pp;
+                    drawCircle(fistX, fistY, 14, '#ef4444', 25);
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+                    ctx.lineWidth = 3;
+                    ctx.setLineDash([4, 6]);
+                    ctx.beginPath();
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(fistX, fistY);
+                    ctx.stroke();
+                    ctx.restore();
+                } else {
+                    const impactX = cx, impactY = cy;
+                    for (let i = 0; i < 40; i++) {
+                        const a = Math.random() * 6.28;
+                        const d = pp * 150;
+                        const size = 2 + Math.random() * 6;
+                        ctx.save();
+                        ctx.globalAlpha = (1 - pp) * 0.7;
+                        ctx.fillStyle = '#fbbf24';
+                        ctx.shadowColor = '#fbbf24';
+                        ctx.shadowBlur = 10;
+                        ctx.save();
+                        ctx.translate(impactX + Math.cos(a) * d, impactY + Math.sin(a) * d);
+                        ctx.rotate(a);
+                        ctx.fillRect(-size / 2, -1, size, 2);
+                        ctx.restore();
+                        ctx.restore();
+                    }
+                    drawCircle(impactX, impactY, 20 * (1 - pp), 'rgba(255,255,255,' + (0.6 * (1 - pp)) + ')', 50);
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(255,200,0,' + (0.3 * (1 - pp)) + ')';
+                    ctx.lineWidth = 2;
+                    for (let i = 0; i < 6; i++) {
+                        const a = i * 1.05;
+                        const r = 15 + pp * 50;
+                        ctx.beginPath();
+                        ctx.moveTo(impactX + Math.cos(a) * r * 0.5, impactY + Math.sin(a) * r * 0.5);
+                        ctx.lineTo(impactX + Math.cos(a) * r, impactY + Math.sin(a) * r);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+                break;
+            }
+            case 'pikachu': {
+                const pp = progress;
+                const boltCount = Math.floor(pp * 8);
+                for (let i = 0; i < boltCount; i++) {
+                    const bx = cx + (Math.random() - 0.5) * 100;
+                    const by = (Math.random() - 0.5) * 100;
+                    ctx.save();
+                    ctx.globalAlpha = Math.max(0, 1 - (pp - i * 0.12) * 3);
+                    ctx.strokeStyle = '#fbbf24';
+                    ctx.shadowColor = '#fff';
+                    ctx.shadowBlur = 25;
+                    ctx.lineWidth = 3 + Math.random() * 3;
+                    ctx.beginPath();
+                    let lx = bx, ly = -20;
+                    ctx.moveTo(lx, ly);
+                    for (let j = 0; j < 5; j++) {
+                        lx += (Math.random() - 0.5) * 50;
+                        ly += 40 + Math.random() * 30;
+                        ctx.lineTo(lx, ly);
+                    }
+                    ctx.stroke();
+                    ctx.restore();
+                }
+                if (pp > 0.8) {
+                    botoes.forEach((btn, i) => {
+                        if (i === item.correta) {
+                            const r = btn.getBoundingClientRect();
+                            const bx = r.left + r.width / 2, by = r.top + r.height / 2;
+                            ctx.save();
+                            ctx.globalAlpha = (pp - 0.8) * 2;
+                            ctx.fillStyle = 'rgba(251, 191, 36, 0.3)';
+                            ctx.shadowColor = '#fbbf24';
+                            ctx.shadowBlur = 40;
+                            ctx.beginPath();
+                            ctx.arc(bx, by, 40 + (pp - 0.8) * 20, 0, 6.28);
+                            ctx.fill();
+                            ctx.restore();
+                        }
+                    });
+                }
+                break;
+            }
+            case 'tanjiro': {
+                const rPhase = progress < 0.3 ? 0 : progress < 0.55 ? 1 : 2;
+                const pp = rPhase === 0 ? progress / 0.3 : rPhase === 1 ? (progress - 0.3) / 0.25 : (progress - 0.55) / 0.45;
+                if (rPhase === 0) {
+                    for (let i = 0; i < 15; i++) {
+                        const a = i * 0.42 + pp * 3;
+                        const d = 10 + pp * 40;
+                        const x = startX + Math.cos(a) * d;
+                        const y = startY + Math.sin(a) * d;
+                        ctx.save();
+                        ctx.globalAlpha = 0.5;
+                        ctx.fillStyle = '#4ade80';
+                        ctx.shadowColor = '#4ade80';
+                        ctx.shadowBlur = 15;
+                        ctx.beginPath();
+                        ctx.arc(x, y, 3 + Math.sin(a) * 2, 0, 6.28);
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                } else if (rPhase === 1) {
+                    const waveY = startY + Math.sin(pp * 6.28) * 40;
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(74, 222, 128, 0.7)';
+                    ctx.shadowColor = '#4ade80';
+                    ctx.shadowBlur = 25;
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.moveTo(startX, startY);
+                    for (let x = 0; x < (cx - startX) * pp; x += 5) {
+                        ctx.lineTo(startX + x, startY + Math.sin(x * 0.05) * 30);
+                    }
+                    ctx.stroke();
+                    ctx.restore();
+                } else {
+                    const vidaEls = document.querySelectorAll('.vida:not(.perdida)');
+                    vidaEls.forEach(el => {
+                        const r = el.getBoundingClientRect();
+                        const vx = r.left + r.width / 2, vy = r.top + r.height / 2;
+                        drawCircle(vx, vy, 12 * (1 - pp), 'rgba(74, 222, 128, ' + (0.4 * (1 - pp)) + ')', 25);
+                        ctx.save();
+                        ctx.globalAlpha = (1 - pp) * 0.6;
+                        ctx.fillStyle = '#4ade80';
+                        ctx.shadowColor = '#4ade80';
+                        ctx.shadowBlur = 10;
+                        for (let k = 0; k < 5; k++) {
+                            const a = Math.random() * 6.28;
+                            const d = Math.random() * 20;
+                            ctx.beginPath();
+                            ctx.arc(vx + Math.cos(a) * d, vy + Math.sin(a) * d, 2, 0, 6.28);
+                            ctx.fill();
+                        }
+                        ctx.restore();
+                    });
+                }
+                break;
+            }
+            case 'gojo': {
+                const rPhase = progress < 0.25 ? 0 : progress < 0.55 ? 1 : 2;
+                const pp = rPhase === 0 ? progress / 0.25 : rPhase === 1 ? (progress - 0.25) / 0.3 : (progress - 0.55) / 0.45;
+                if (rPhase === 0) {
+                    drawCircle(cx - 50, cy, 10 + pp * 15, 'rgba(255, 68, 68, ' + (0.5 + pp * 0.3) + ')', 30);
+                    drawCircle(cx + 50, cy, 10 + pp * 15, 'rgba(68, 136, 255, ' + (0.5 + pp * 0.3) + ')', 30);
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+                    ctx.setLineDash([2, 4]);
+                    ctx.beginPath();
+                    ctx.arc(cx - 50, cy, 25 + pp * 10, 0, 6.28);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.arc(cx + 50, cy, 25 + pp * 10, 0, 6.28);
+                    ctx.stroke();
+                    ctx.restore();
+                } else if (rPhase === 1) {
+                    const rDist = 50 - pp * 50;
+                    const rPosX = cx - rDist;
+                    const bPosX = cx + rDist;
+                    drawCircle(rPosX, cy, 20 * (1 - pp * 0.3), 'rgba(255, 68, 68, ' + (0.7 * (1 - pp * 0.5)) + ')', 30);
+                    drawCircle(bPosX, cy, 20 * (1 - pp * 0.3), 'rgba(68, 136, 255, ' + (0.7 * (1 - pp * 0.5)) + ')', 30);
+                    ctx.save();
+                    ctx.shadowColor = '#a855f7';
+                    ctx.shadowBlur = 40;
+                    ctx.strokeStyle = 'rgba(168, 85, 247, ' + (pp * 0.6) + ')';
+                    ctx.lineWidth = 2;
+                    for (let i = 0; i < 8; i++) {
+                        const a = i * 0.78 + pp * 2;
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, 20 + pp * 30 + Math.sin(a) * 10, 0, 6.28);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                } else {
+                    const radius = 10 + pp * 200;
+                    ctx.save();
+                    ctx.globalAlpha = 0.4 * (1 - pp * 0.6);
+                    ctx.fillStyle = '#a855f7';
+                    ctx.shadowColor = '#a855f7';
+                    ctx.shadowBlur = 70;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, radius, 0, 6.28);
+                    ctx.fill();
+                    ctx.restore();
+                    ctx.save();
+                    ctx.globalAlpha = 0.6 * (1 - pp);
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 3;
+                    for (let i = 0; i < 12; i++) {
+                        const a = i * 0.52;
+                        const r1 = radius * 0.3, r2 = radius * 0.7 + pp * 40;
+                        ctx.beginPath();
+                        ctx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+                        ctx.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                    for (let i = 0; i < 15; i++) {
+                        const a = Math.random() * 6.28;
+                        const d = Math.random() * radius;
+                        drawCircle(cx + Math.cos(a) * d, cy + Math.sin(a) * d, 2 + Math.random() * 3, 'rgba(168, 85, 247, ' + (0.5 * (1 - pp)) + ')', 15);
+                    }
+                }
+                break;
+            }
+            case 'mikasa': {
+                const pp = progress;
+                const numSlash = Math.min(3, Math.floor(pp * 5));
+                for (let i = 0; i < numSlash; i++) {
+                    const sx = 100 + i * 120 + Math.sin(pp * 3 + i) * 50;
+                    const sy = 100 + i * 80 + Math.cos(pp * 2 + i) * 50;
+                    const ex = sx + 80 + Math.sin(pp * 4 + i) * 40;
+                    const ey = sy - 60 - Math.cos(pp * 3 + i) * 40;
+                    const alpha = Math.max(0, 1 - (pp - i * 0.2) * 2);
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    ctx.strokeStyle = '#fff';
+                    ctx.shadowColor = '#8b5cf6';
+                    ctx.shadowBlur = 20;
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(sx, sy);
+                    ctx.lineTo(ex, ey);
+                    ctx.stroke();
+                    ctx.strokeStyle = 'rgba(139, 92, 246, ' + alpha * 0.5 + ')';
+                    ctx.lineWidth = 6;
+                    ctx.beginPath();
+                    ctx.moveTo(sx + 5, sy - 5);
+                    ctx.lineTo(ex + 5, ey - 5);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+                break;
+            }
+            case 'sailor': {
+                const rPhase = progress < 0.3 ? 0 : progress < 0.6 ? 1 : 2;
+                const pp = rPhase === 0 ? progress / 0.3 : rPhase === 1 ? (progress - 0.3) / 0.3 : (progress - 0.6) / 0.4;
+                if (rPhase === 0) {
+                    drawCircle(startX, startY, 5 + pp * 25, 'rgba(236, 72, 153, ' + (0.3 + pp * 0.3) + ')', 35);
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                    ctx.setLineDash([3, 5]);
+                    ctx.beginPath();
+                    ctx.arc(startX, startY, 25 + pp * 15, 0, 6.28);
+                    ctx.stroke();
+                    ctx.restore();
+                } else if (rPhase === 1) {
+                    const ringR = 25 + pp * 100;
+                    ctx.save();
+                    ctx.globalAlpha = 0.3 * (1 - pp * 0.4);
+                    ctx.strokeStyle = '#ec4899';
+                    ctx.shadowColor = '#ec4899';
+                    ctx.shadowBlur = 30;
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.arc(startX, startY, ringR, 0, 6.28);
+                    ctx.stroke();
+                    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(startX, startY, ringR + 8, 0, 6.28);
+                    ctx.stroke();
+                    ctx.restore();
+                } else {
+                    const vidaEls = document.querySelectorAll('.vida');
+                    vidaEls.forEach(el => {
+                        const r = el.getBoundingClientRect();
+                        const vx = r.left + r.width / 2, vy = r.top + r.height / 2;
+                        drawCircle(vx, vy, 8 + pp * 10, 'rgba(236, 72, 153, ' + (0.3 * (1 - pp)) + ')', 25);
+                        ctx.save();
+                        ctx.globalAlpha = (1 - pp) * 0.5;
+                        ctx.fillStyle = '#f472b6';
+                        ctx.shadowColor = '#ec4899';
+                        ctx.shadowBlur = 10;
+                        for (let k = 0; k < 3; k++) {
+                            const a = Math.random() * 6.28;
+                            const d = Math.random() * 15;
+                            ctx.beginPath();
+                            ctx.arc(vx + Math.cos(a) * d, vy + Math.sin(a) * d, 2 + Math.random() * 2, 0, 6.28);
+                            ctx.fill();
+                        }
+                        ctx.restore();
+                    });
+                }
+                break;
+            }
+            case 'vegeta': {
+                const rPhase = progress < 0.25 ? 0 : progress < 0.5 ? 1 : 2;
+                const pp = rPhase === 0 ? progress / 0.25 : rPhase === 1 ? (progress - 0.25) / 0.25 : (progress - 0.5) / 0.5;
+                if (rPhase === 0) {
+                    for (let i = 0; i < 25; i++) {
+                        const a = Math.random() * 6.28;
+                        const d = pp * 50;
+                        const x = startX + Math.cos(a) * d;
+                        const y = startY + Math.sin(a) * d;
+                        ctx.save();
+                        ctx.fillStyle = Math.random() > 0.5 ? '#14b8a6' : '#a855f7';
+                        ctx.shadowColor = '#14b8a6';
+                        ctx.shadowBlur = 12;
+                        ctx.globalAlpha = 0.5 + pp * 0.3;
+                        ctx.beginPath();
+                        ctx.arc(x, y, 2 + Math.random() * 3, 0, 6.28);
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                    drawCircle(startX, startY, 5 + pp * 15, 'rgba(20, 184, 166, ' + (0.3 + pp * 0.3) + ')', 35);
+                } else if (rPhase === 1) {
+                    ctx.save();
+                    ctx.shadowColor = '#14b8a6';
+                    ctx.shadowBlur = 60;
+                    ctx.strokeStyle = 'rgba(20, 184, 166, 0.8)';
+                    ctx.lineWidth = 20 + pp * 10;
+                    ctx.beginPath();
+                    ctx.moveTo(startX, startY);
+                    const endX = startX + (cx - startX) * pp;
+                    const endY = startY + (cy - startY) * pp * 0.2 + Math.sin(pp * 8) * 20;
+                    ctx.lineTo(endX, endY);
+                    ctx.stroke();
+                    ctx.strokeStyle = 'rgba(168, 85, 247, 0.5)';
+                    ctx.lineWidth = 8;
+                    ctx.beginPath();
+                    ctx.moveTo(startX - 5, startY);
+                    ctx.lineTo(endX - 5, endY);
+                    ctx.stroke();
+                    ctx.restore();
+                } else {
+                    botoes.forEach((btn) => {
+                        const r = btn.getBoundingClientRect();
+                        const bx = r.left + r.width / 2, by = r.top + r.height / 2;
+                        for (let i = 0; i < 12; i++) {
+                            const a = Math.random() * 6.28;
+                            const d = pp * 100;
+                            ctx.save();
+                            ctx.globalAlpha = (1 - pp) * 0.7;
+                            ctx.fillStyle = Math.random() > 0.5 ? '#14b8a6' : '#a855f7';
+                            ctx.shadowColor = '#14b8a6';
+                            ctx.shadowBlur = 15;
+                            const pSize = 3 + Math.random() * 5;
+                            ctx.beginPath();
+                            ctx.arc(bx + Math.cos(a) * d, by + Math.sin(a) * d, pSize, 0, 6.28);
+                            ctx.fill();
+                            ctx.restore();
+                        }
+                        drawCircle(bx, by, 15 * (1 - pp), 'rgba(255,255,255,' + (0.3 * (1 - pp)) + ')', 30);
+                    });
+                }
+                break;
+            }
+            case 'itachi': {
+                const rPhase = progress < 0.2 ? 0 : progress < 0.6 ? 1 : 2;
+                const pp = rPhase === 0 ? progress / 0.2 : rPhase === 1 ? (progress - 0.2) / 0.4 : (progress - 0.6) / 0.4;
+                if (rPhase === 0) {
+                    drawCircle(cx, cy, 5 + pp * 15, 'rgba(204, 51, 51, ' + (0.3 + pp * 0.5) + ')', 30);
+                } else if (rPhase === 1) {
+                    const r = 40 + Math.sin(pp * 3) * 5;
+                    drawCircle(cx, cy, r, 'rgba(204, 51, 51, 0.6)', 40);
+                    ctx.save();
+                    ctx.strokeStyle = '#1a1a1a';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r - 5, 0, 6.28);
+                    ctx.stroke();
+                    ctx.restore();
+                    const tomoeAngle = pp * 4;
+                    for (let i = 0; i < 3; i++) {
+                        const a = i * 2.09 + tomoeAngle;
+                        const tx = cx + Math.cos(a) * (r * 0.6);
+                        const ty = cy + Math.sin(a) * (r * 0.6);
+                        drawCircle(tx, ty, 6 + Math.sin(pp * 6 + i) * 2, '#1a1a1a', 10);
+                        ctx.save();
+                        ctx.strokeStyle = '#cc3333';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(tx, ty, 8, 0, 6.28);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                    drawCircle(cx, cy, 8, '#1a1a1a', 15);
+                } else {
+                    const r = 40 * (1 - pp * 0.3);
+                    ctx.save();
+                    ctx.globalAlpha = 1 - pp;
+                    drawCircle(cx, cy, r, 'rgba(204, 51, 51, ' + (0.5 * (1 - pp)) + ')', 30);
+                    ctx.strokeStyle = 'rgba(204, 51, 51, ' + (0.3 * (1 - pp)) + ')';
+                    ctx.lineWidth = 2;
+                    for (let i = 0; i < 3; i++) {
+                        const a = i * 2.09 + pp * 2;
+                        ctx.beginPath();
+                        ctx.arc(cx + Math.cos(a) * r * 0.6, cy + Math.sin(a) * r * 0.6, 6, 0, 6.28);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+                break;
+            }
+        }
+
+        if (progress < 1) {
+            requestAnimationFrame(animar);
+        } else {
+            canvas.classList.remove('ativo');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+    }
+    animar();
+}
+
+// ===== NAVIGATION AND UI =====
 function mostrarAba(aba) {
-    document.querySelectorAll('.tab').forEach(el => el.classList.remove('ativa'));
-    document.querySelectorAll('.view').forEach(el => el.classList.remove('ativa'));
-    document.getElementById(`tab${aba}`).classList.add('ativa');
-    document.getElementById(`view${aba}`).classList.add('ativa');
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('ativa'));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('ativa'));
+    const tab = document.getElementById('tab' + aba);
+    if (tab) tab.classList.add('ativa');
+    const view = document.getElementById('view' + aba);
+    if (view) view.classList.add('ativa');
     if (aba === 'Loja') renderizarLoja();
     if (aba === 'Inventario') renderizarInventario();
     if (aba === 'Perfil') renderizarPerfil();
 }
 
 function atualizarHUD() {
-    const pct = user.nivel >= NIVEL_MAX ? 100 : Math.round((user.xp / user.xpProximoNivel) * 100);
-    document.getElementById('hudNivel').innerText = `LV ${user.nivel}`;
-    document.getElementById('hudBarra').style.width = `${pct}%`;
-    document.getElementById('hudXpTexto').innerText = user.nivel >= NIVEL_MAX ? 'MAX' : `${user.xp}/${user.xpProximoNivel} XP`;
-    document.getElementById('hudMoedas').innerText = `🪙 ${user.moedas}`;
+    const moedasEl = document.getElementById('hudMoedas');
+    if (moedasEl) moedasEl.innerText = '🪙 ' + (user ? user.moedas : 0);
 
-    const rankAtivo = user.equipado.rank ? lojaRanks.find(r => r.id === user.equipado.rank) : null;
-    const rankMostra = document.getElementById('hudRank');
-    if (rankAtivo) {
-        rankMostra.innerText = `${rankAtivo.icone} ${rankAtivo.nome} ⚡${rankAtivo.multiplicadorXP}x`;
-        rankMostra.style.color = rankAtivo.cor;
+    const nivelEl = document.getElementById('hudNivel');
+    if (nivelEl) nivelEl.innerText = 'LV ' + (user ? user.nivel : 1);
+
+    const barra = document.getElementById('hudBarra');
+    const xpTexto = document.getElementById('hudXpTexto');
+    if (user) {
+        const pct = user.xpProximoNivel > 0 ? Math.min(100, Math.floor((user.xp / user.xpProximoNivel) * 100)) : 100;
+        if (barra) barra.style.width = pct + '%';
+        if (xpTexto) xpTexto.innerText = (user.nivel >= NIVEL_MAX ? 'MAX' : user.xp + '/' + user.xpProximoNivel + ' XP');
     } else {
-        rankMostra.innerText = '';
+        if (barra) barra.style.width = '0%';
+        if (xpTexto) xpTexto.innerText = '0/0 XP';
     }
 
     const streakEl = document.getElementById('hudStreak');
-    if (user.streak > 0) {
-        streakEl.innerText = `🔥 ${user.streak}`;
-        streakEl.style.display = 'inline';
-    } else {
-        streakEl.style.display = 'none';
+    if (streakEl) {
+        if (user && user.streak > 0) {
+            streakEl.style.display = 'inline';
+            streakEl.innerText = '🔥 ' + user.streak;
+        } else {
+            streakEl.style.display = 'none';
+        }
     }
 
     const boostEl = document.getElementById('hudBoost');
-    if (user.boostAtivo) {
-        boostEl.innerText = `⚡ ${user.boostAtivo.multiplicador}x (${user.boostAtivo.restantes})`;
-        boostEl.style.display = 'inline';
-    } else {
-        boostEl.style.display = 'none';
+    if (boostEl) {
+        if (boostAtual) {
+            const boostNome = lojaBoosts.find(b => b.id === boostAtual);
+            boostEl.style.display = 'inline';
+            boostEl.innerText = '⚡ ' + (boostNome ? boostNome.nome : boostAtual) + ' ' + boostTempoRestante + 's';
+        } else {
+            boostEl.style.display = 'none';
+        }
     }
 
-    // Character widget
+    const rankEl = document.getElementById('hudRank');
+    if (rankEl && user) {
+        const rankId = user.equipado.rank;
+        if (rankId) {
+            const rank = lojaRanks.find(r => r.id === rankId);
+            if (rank) {
+                rankEl.innerText = rank.icone + ' ' + rank.nome;
+                if (rank.cor) rankEl.style.color = rank.cor;
+            } else {
+                rankEl.innerText = '';
+            }
+        } else {
+            rankEl.innerText = '';
+        }
+    }
+
     atualizarCharWidget();
 }
 
 function atualizarCharWidget() {
     const widget = document.getElementById('charWidget');
+    if (!widget) return;
     const personId = user.equipado.personagem;
-    if (!personId || !quizAtivo) {
+    if (personId && pixelCharacters[personId]) {
+        widget.style.display = 'block';
+        const nomeEl = document.getElementById('charWidgetNome');
+        const poderEl = document.getElementById('charWidgetPoder');
+        if (nomeEl) nomeEl.innerText = pixelCharacters[personId].nome;
+        if (poderEl && poderesDisponiveis[personId]) {
+            const usosTexto = poderUsosRestantes > 1 ? ' (' + poderUsosRestantes + 'x)' : '';
+            poderEl.innerText = poderesDisponiveis[personId].icone + ' ' + poderesDisponiveis[personId].nome + usosTexto;
+            if (poderUsosRestantes <= 0 || !quizAtivo) {
+                poderEl.disabled = true;
+            } else {
+                poderEl.disabled = false;
+            }
+        }
+        const passiva = getPassiva(personId);
+        const passivaEl = document.getElementById('charWidgetPassiva');
+        if (passivaEl) passivaEl.innerText = passiva ? passiva.desc : '';
+
+        const cargaEl = document.getElementById('charWidgetCarga');
+        if (cargaEl && poderEl) {
+            const maxUsos = getMaxPoderUsos();
+            const atual = poderUsosRestantes;
+            const pct = maxUsos > 0 ? (atual / maxUsos) * 100 : 0;
+            cargaEl.style.width = pct + '%';
+            cargaEl.style.background = atual > 0 ? 'linear-gradient(90deg, #9b59b6, #a855f7)' : '#333';
+        }
+
+        renderPixel('charWidgetPixel', personId, 6);
+    } else {
         widget.style.display = 'none';
-        return;
-    }
-    const ch = pixelCharacters[personId];
-    const poder = poderesDisponiveis[personId];
-    if (!ch) { widget.style.display = 'none'; return; }
-
-    widget.style.display = 'flex';
-    const canvas = document.getElementById('charWidgetPixel');
-    renderPixel(canvas, ch, 4);
-
-    document.getElementById('charWidgetNome').innerText = ch.nome.split(' ')[0];
-
-    const btn = document.getElementById('charWidgetPoder');
-    if (poder && !poderUsado && !perguntaRespondida) {
-        btn.style.display = 'block';
-        btn.innerText = `${poder.icone} ${poder.nome}`;
-        btn.disabled = false;
-    } else {
-        btn.style.display = 'block';
-        btn.innerText = poderUsado ? '✅ Usado' : '⏳ Espere';
-        btn.disabled = true;
     }
 }
 
-// ===== LOJA (render) =====
+// ===== SHOP RENDER =====
 function renderizarLoja() {
-    document.getElementById('lojaSaldo').innerText = user.moedas;
     const container = document.getElementById('lojaConteudo');
-    let html = '<div class="loja-categorias">';
-    lojaBoosts.forEach(item => html += cardLoja(item, 'boost'));
-    html += '</div><h3 class="secao-titulo">🎭 Personagens</h3><div class="loja-categorias">';
-    Object.entries(pixelCharacters).forEach(([id, ch]) => {
-        const comprado = user.inventario.personagens.includes(id);
-        const poder = poderesDisponiveis[id];
-        html += `
-            <div class="card-loja">
-                <div class="pixel-container"><canvas id="pixel-${id}" class="pixel-art"></canvas></div>
-                <div class="card-info">
-                    <strong>${ch.nome}</strong>
-                    <small>${ch.anime}</small>
-                    ${poder ? `<small class="poder-info">${poder.icone} ${poder.nome}</small>` : ''}
-                </div>
-                ${comprado ? '<span class="tag-comprado">✔️ Comprado</span>' :
-                    `<button onclick="comprarItem('personagem','${id}')" class="btn-comprar" ${user.moedas < ch.preco ? 'disabled' : ''}>🪙 ${ch.preco}</button>`}
-                ${comprado && user.equipado.personagem !== id ?
-                    `<button onclick="equiparItem('personagem','${id}')" class="btn-equipar">Equipar</button>` : ''}
-                ${user.equipado.personagem === id ? '<span class="tag-equipado">✅ Equipado</span>' : ''}
-            </div>`;
-    });
-    html += '</div><h3 class="secao-titulo">🏆 Ranks</h3><div class="loja-categorias">';
-    lojaRanks.forEach(item => html += cardLoja(item, 'rank'));
-    html += '</div><h3 class="secao-titulo">📝 Posts</h3><div class="loja-categorias">';
-    lojaPosts.forEach(item => html += cardLoja(item, 'post'));
+    if (!container) return;
+    document.getElementById('lojaSaldo').innerText = user ? user.moedas : 0;
+    let html = '';
+
+    html += '<h3 class="secao-titulo">⚡ Boosts</h3>';
+    html += '<div class="loja-categorias">';
+    lojaBoosts.forEach(b => { html += cardLoja(b, 'boosts'); });
     html += '</div>';
+
+    html += '<h3 class="secao-titulo">🎭 Personagens</h3>';
+    html += '<div class="loja-categorias">';
+    for (const [id, p] of Object.entries(pixelCharacters)) {
+        const poder = poderesDisponiveis[id];
+        const item = {
+            id: id, nome: p.nome, desc: poder ? poder.desc : 'Personagem', preco: 150, icone: '🎭'
+        };
+        html += cardLoja(item, 'personagens');
+    }
+    html += '</div>';
+
+    html += '<h3 class="secao-titulo">🥇 Ranks</h3>';
+    html += '<div class="loja-categorias">';
+    lojaRanks.forEach(r => { html += cardLoja(r, 'ranks'); });
+    html += '</div>';
+
+    html += '<h3 class="secao-titulo">📜 Posts</h3>';
+    html += '<div class="loja-categorias">';
+    lojaPosts.forEach(p => { html += cardLoja(p, 'posts'); });
+    html += '</div>';
+
     container.innerHTML = html;
-    setTimeout(() => {
-        Object.keys(pixelCharacters).forEach(id => {
-            const c = document.getElementById(`pixel-${id}`);
-            if (c) renderPixel(c, pixelCharacters[id], 4);
-        });
-    }, 50);
+
+    for (const id of Object.keys(pixelCharacters)) {
+        setTimeout(() => renderPixel('pixel_' + id, id, 3), 50);
+    }
 }
 
-function cardLoja(item, tipo) {
-    const comprado = user.inventario[tipo + 's']?.includes(item.id);
-    const cor = item.cor || '#fff';
-    if (tipo === 'boost') {
-        const ativo = user.boostAtivo && user.boostAtivo.id === item.id;
-        return `
-            <div class="card-loja" style="border-color:${cor}">
-                <div class="card-info"><strong>${item.nome}</strong><small>${item.desc}</small></div>
-                ${ativo ? '<span class="tag-ativo">⚡ Ativo</span>' :
-                    comprado ? '<span class="tag-comprado">✔️ Comprado</span>' :
-                    `<button onclick="comprarItem('boost','${item.id}')" class="btn-comprar" ${user.moedas < item.preco ? 'disabled' : ''}>🪙 ${item.preco}</button>`}
-            </div>`;
-    }
-    const equipado = user.equipado[tipo] === item.id;
-    if (tipo === 'rank') {
-        return `
-            <div class="card-loja" style="border-color:${cor}">
-                <div class="card-info">
-                    <strong>${item.icone} ${item.nome}</strong>
-                    <small>${item.desc}</small>
-                    <span class="rank-mult-info">⚡ ${item.multiplicadorXP}x XP</span>
-                </div>
-                ${equipado ? '<span class="tag-equipado">✅ Equipado</span>' :
-                    comprado ? `<button onclick="equiparItem('${tipo}','${item.id}')" class="btn-equipar">Equipar</button>` :
-                    `<button onclick="comprarItem('${tipo}','${item.id}')" class="btn-comprar" ${user.moedas < item.preco ? 'disabled' : ''}>🪙 ${item.preco}</button>`}
-            </div>`;
-    }
-    return `
-        <div class="card-loja" style="border-color:${cor}">
-            <div class="card-info"><strong>${item.nome}</strong><small>${item.desc}</small></div>
-            ${equipado ? '<span class="tag-equipado">✅ Equipado</span>' :
-                comprado ? `<button onclick="equiparItem('${tipo}','${item.id}')" class="btn-equipar">Equipar</button>` :
-                `<button onclick="comprarItem('${tipo}','${item.id}')" class="btn-comprar" ${user.moedas < item.preco ? 'disabled' : ''}>🪙 ${item.preco}</button>`}
-        </div>`;
-}
+function cardLoja(item, categoria) {
+    const jaTem = user.inventario[categoria] && user.inventario[categoria].includes(item.id);
+    const equipado = user.equipado[categoria.substring(0, categoria.length - 1)] === item.id || 
+                     (categoria === 'personagens' && user.equipado.personagem === item.id) ||
+                     (categoria === 'ranks' && user.equipado.rank === item.id) ||
+                     (categoria === 'posts' && user.equipado.post === item.id);
+    const podeComprar = !jaTem && user.moedas >= item.preco;
+    const isFree = item.preco === 0;
 
-function comprarItem(tipo, id) {
-    const lista = tipo === 'personagem'
-        ? Object.entries(pixelCharacters).map(([k, v]) => ({ id: k, ...v }))
-        : tipo === 'boost' ? lojaBoosts : tipo === 'rank' ? lojaRanks : lojaPosts;
-    const item = lista.find(i => i.id === id);
-    if (!item || user.moedas < item.preco) return;
-    if (tipo === 'boost') {
-        if (user.boostAtivo) return;
-        user.boostAtivo = { id: item.id, multiplicador: item.multiplicador, restantes: item.restantes };
+    const estiloCor = (categoria === 'ranks' && item.cor) ? ' style="border-color:' + item.cor + ';box-shadow:0 0 15px ' + item.cor + '22"' : '';
+    const ehPersonagem = categoria === 'personagens' && pixelCharacters[item.id];
+    const clickPersonagem = ehPersonagem ? ' onclick="mostrarDetalhePersonagem(\'' + item.id + '\')"' : '';
+    let html = '<div class="card-loja' + (ehPersonagem ? ' card-personagem' : '') + '"' + estiloCor + clickPersonagem + '>';
+    if (ehPersonagem) {
+        html += '<div class="pixel-container"><canvas id="pixel_' + item.id + '" class="pixel-art pixel-sm"></canvas></div>';
     } else {
-        const plural = tipo === 'personagem' ? 'personagens' : tipo + 's';
-        if (!user.inventario[plural]) user.inventario[plural] = [];
-        if (user.inventario[plural].includes(id)) return;
-        user.inventario[plural].push(id);
+        html += '<div style="font-size:2.5rem;margin-bottom:6px">' + (item.icone || '🎁') + '</div>';
     }
-    user.moedas -= item.preco;
-    salvarUser();
-    atualizarHUD();
-    renderizarLoja();
+    html += '<div class="card-info">';
+    html += '<strong ' + (categoria === 'ranks' && item.cor ? 'style="color:' + item.cor + '"' : '') + '>' + item.nome + '</strong>';
+    html += '<small>' + item.desc + '</small>';
+    if (categoria === 'ranks') {
+        html += '<div class="rank-mult-info" ' + (item.cor ? 'style="color:' + item.cor + '"' : '') + '>Multiplicador: x' + (item.mult || 1) + '</div>';
+    }
+    if (categoria === 'personagens' && poderesDisponiveis[item.id]) {
+        html += '<small class="poder-info">' + poderesDisponiveis[item.id].icone + ' ' + poderesDisponiveis[item.id].nome + '</small>';
+    }
+    html += '</div>';
+
+    if (categoria === 'boosts') {
+        if (boostAtual === item.id) {
+            html += '<span class="tag-ativo">Ativo (' + boostTempoRestante + 's)</span>';
+        } else if (jaTem) {
+            html += '<button onclick="ativarBoost(\'' + item.id + '\')" class="btn-equipar">Ativar</button>';
+        } else if (isFree) {
+            html += '<button onclick="comprarItem(\'' + item.id + '\',\'' + categoria + '\',0)" class="btn-comprar">Gratuito</button>';
+        } else {
+            html += '<button onclick="comprarItem(\'' + item.id + '\',\'' + categoria + '\',' + item.preco + ')" class="btn-comprar" ' + (!podeComprar ? 'disabled' : '') + '>🪙 ' + item.preco + '</button>';
+        }
+    } else if (equipado) {
+        html += '<span class="tag-equipado">Equipado</span>';
+    } else if (jaTem) {
+        html += '<button onclick="equiparItem(\'' + item.id + '\',\'' + categoria + '\')" class="btn-equipar">Equipar</button>';
+    } else if (isFree) {
+        html += '<button onclick="comprarItem(\'' + item.id + '\',\'' + categoria + '\',0)" class="btn-comprar">Gratuito</button>';
+    } else {
+        html += '<button onclick="comprarItem(\'' + item.id + '\',\'' + categoria + '\',' + item.preco + ')" class="btn-comprar" ' + (!podeComprar ? 'disabled' : '') + '>🪙 ' + item.preco + '</button>';
+    }
+
+    html += '</div>';
+    return html;
 }
 
-function equiparItem(tipo, id) {
-    if (tipo === 'personagem' && user.inventario.personagens.includes(id)) user.equipado.personagem = id;
-    else if (tipo === 'rank' && user.inventario.ranks.includes(id)) user.equipado.rank = id;
-    else if (tipo === 'post' && user.inventario.posts.includes(id)) user.equipado.post = id;
-    else return;
+function comprarItem(id, categoria, preco) {
+    if (user.moedas < preco) return;
+    if (user.inventario[categoria] && user.inventario[categoria].includes(id)) return;
+    
+    if (!user.inventario[categoria]) user.inventario[categoria] = [];
+    user.moedas -= preco;
+    user.inventario[categoria].push(id);
     salvarUser();
-    atualizarHUD();
+
+    if (categoria === 'personagens') {
+        user.equipado.personagem = id;
+        salvarUser();
+        setTimeout(() => mostrarDetalhePersonagem(id), 300);
+    }
+
+    notificar('✅ Comprado: ' + id + '!', '#4ade80');
     renderizarLoja();
+    atualizarHUD();
+    
+    // Render pixel art if needed
+    if (categoria === 'personagens' && pixelCharacters[id]) {
+        setTimeout(() => renderPixel('pixel_' + id, id, 6), 50);
+    }
 }
 
-// ===== INVENTÁRIO =====
-let invAbaAtiva = 'personagens';
+function equiparItem(id, categoria) {
+    if (!user.inventario[categoria] || !user.inventario[categoria].includes(id)) return;
+    
+    const key = categoria === 'personagens' ? 'personagem' : categoria === 'ranks' ? 'rank' : 'post';
+    user.equipado[key] = id;
+    salvarUser();
+    notificar('✅ Equipado: ' + id + '!', '#4ade80');
+    renderizarLoja();
+    atualizarHUD();
+    if (categoria === 'personagens') mostrarDetalhePersonagem(id);
+}
+
+// ===== BOOST SYSTEM =====
+function ativarBoost(id) {
+    const boost = lojaBoosts.find(b => b.id === id);
+    if (!boost || boostAtual) return;
+    const idx = (user.inventario.boosts || []).indexOf(id);
+    if (idx === -1) return;
+
+    const duracoes = { boost_xp: 30, boost_moedas: 30, boost_vida: 30, boost_2x: 20, boost_triplo: 15, boost_dobro: 25 };
+    const tempoTotal = duracoes[id] || 30;
+    boostAtual = id;
+    boostTempoRestante = tempoTotal;
+    user.inventario.boosts.splice(idx, 1);
+    user.boostAtivo = id;
+    salvarUser();
+    notificar('⚡ ' + boost.nome + ' ativado por ' + tempoTotal + 's!', '#fbbf24');
+    renderizarLoja();
+    atualizarHUD();
+
+    if (boostTimerInterval) clearInterval(boostTimerInterval);
+    boostTimerInterval = setInterval(() => {
+        boostTempoRestante--;
+        atualizarHUD();
+        if (boostTempoRestante <= 0) {
+            clearInterval(boostTimerInterval);
+            boostTimerInterval = null;
+            boostAtual = null;
+            user.boostAtivo = null;
+            salvarUser();
+            notificar('⏱️ Boost ' + boost.nome + ' expirou!', '#f87171');
+            renderizarLoja();
+            atualizarHUD();
+        }
+    }, 1000);
+}
+
+function getBoostMultiplicadorXP() {
+    if (boostAtual === 'boost_xp') return 1.5;
+    if (boostAtual === 'boost_2x') return 2.0;
+    if (boostAtual === 'boost_triplo') return 3.0;
+    return 1.0;
+}
+
+function getBoostMultiplicadorMoedas() {
+    if (boostAtual === 'boost_moedas') return 1.5;
+    if (boostAtual === 'boost_dobro') return 2.0;
+    return 1.0;
+}
+
+function getBoostVidaExtra() {
+    if (boostAtual === 'boost_vida') return 1;
+    return 0;
+}
+
+// ===== INVENTORY =====
+let invAbaAtual = 'personagens';
 
 function renderizarInventario() {
-    const c = document.getElementById('invConteudo');
-    const p = user.inventario.personagens;
-    const r = user.inventario.ranks;
-    const ps = user.inventario.posts;
-    const temPersonagens = p.length > 0;
-    const temRanks = r.length > 0;
-    const temPosts = ps.length > 0;
+    const container = document.getElementById('invConteudo');
+    if (!container) return;
 
     let html = '<div class="inv-tabs">';
-    html += `<button class="inv-tab ${invAbaAtiva === 'personagens' ? 'ativa' : ''}" onclick="mudarInvAba('personagens')">🎭 Personagens (${p.length})</button>`;
-    html += `<button class="inv-tab ${invAbaAtiva === 'ranks' ? 'ativa' : ''}" onclick="mudarInvAba('ranks')">🏆 Ranks (${r.length})</button>`;
-    html += `<button class="inv-tab ${invAbaAtiva === 'posts' ? 'ativa' : ''}" onclick="mudarInvAba('posts')">📝 Posts (${ps.length})</button>`;
+    const abas = ['personagens', 'ranks', 'posts', 'boosts'];
+    abas.forEach(a => {
+        const nomes = { personagens: '🎭 Personagens', ranks: '🥇 Ranks', posts: '📜 Posts', boosts: '⚡ Boosts' };
+        html += '<button class="inv-tab ' + (invAbaAtual === a ? 'ativa' : '') + '" onclick="mudarInvAba(\'' + a + '\')">' + (nomes[a] || a) + '</button>';
+    });
     html += '</div>';
 
-    if (!temPersonagens && !temRanks && !temPosts) {
-        html += '<p class="vazio">Seu inventário está vazio. Compre itens na loja!</p>';
-        c.innerHTML = html;
-        return;
+    html += '<div class="inv-conteudo-tab ativa">';
+
+    const itens = user.inventario[invAbaAtual] || [];
+    if (itens.length === 0) {
+        html += '<div class="vazio">Nada aqui ainda... Compre na loja!</div>';
+    } else {
+        html += '<div class="inv-grid">';
+        itens.forEach(id => {
+            let item = null;
+            let nome = id;
+            if (invAbaAtual === 'personagens') {
+                item = pixelCharacters[id];
+                nome = item ? item.nome : id;
+            } else if (invAbaAtual === 'ranks') {
+                item = lojaRanks.find(r => r.id === id);
+                nome = item ? item.nome : id;
+            } else if (invAbaAtual === 'posts') {
+                item = lojaPosts.find(p => p.id === id);
+                nome = item ? item.nome : id;
+            } else if (invAbaAtual === 'boosts') {
+                item = lojaBoosts.find(b => b.id === id);
+                nome = item ? item.nome : id;
+            }
+
+            const key = invAbaAtual === 'personagens' ? 'personagem' : invAbaAtual === 'ranks' ? 'rank' : 'post';
+            const equipado = user.equipado[key] === id;
+            const boostAtivo = invAbaAtual === 'boosts' && boostAtual === id;
+            const ehPersonagemInv = invAbaAtual === 'personagens' && pixelCharacters[id];
+            const clickPersonagemInv = ehPersonagemInv ? ' onclick="mostrarDetalhePersonagem(\'' + id + '\')"' : '';
+
+            html += '<div class="card-inv ' + (equipado ? 'equipado' : '') + (boostAtivo ? ' boost-ativo' : '') + (ehPersonagemInv ? ' card-personagem' : '') + '"' + clickPersonagemInv + '>';
+            if (ehPersonagemInv) {
+                html += '<div class="pixel-container"><canvas id="invPixel_' + id + '" class="pixel-art pixel-sm"></canvas></div>';
+            } else {
+                html += '<div style="font-size:2rem;margin-bottom:4px">' + (item ? item.icone || '🎁' : '🎁') + '</div>';
+            }
+            html += '<div class="card-info">';
+            html += '<strong>' + nome + '</strong>';
+            if (item && item.desc) {
+                html += '<small>' + item.desc.substring(0, 30) + '</small>';
+            }
+            html += '</div>';
+            if (invAbaAtual === 'boosts') {
+                if (boostAtual === id) {
+                    html += '<span class="tag-ativo">Ativo (' + boostTempoRestante + 's)</span>';
+                } else {
+                    html += '<button onclick="ativarBoost(\'' + id + '\');renderizarInventario();" class="btn-equipar">Ativar</button>';
+                }
+            } else if (equipado) {
+                html += '<span class="tag-equipado">Equipado</span>';
+            } else {
+                html += '<button onclick="equiparItem(\'' + id + '\',\'' + invAbaAtual + '\');renderizarInventario();" class="btn-equipar">Equipar</button>';
+            }
+            html += '</div>';
+        });
+        html += '</div>';
     }
 
-    if (invAbaAtiva === 'personagens') {
-        if (temPersonagens) {
-            html += '<div class="inv-grid">';
-            p.forEach(id => {
-                const ch = pixelCharacters[id];
-                if (!ch) return;
-                const eq = user.equipado.personagem === id;
-                const pod = poderesDisponiveis[id];
-                html += `<div class="card-inv ${eq ? 'equipado' : ''}">
-                    <div class="pixel-container"><canvas id="invpixel-${id}" class="pixel-art pixel-sm"></canvas></div>
-                    <div class="card-info">
-                        <strong>${ch.nome}</strong>
-                        <small>${ch.anime}</small>
-                        ${pod ? `<small class="poder-info">${pod.icone} ${pod.nome}</small>` : ''}
-                    </div>
-                    ${eq ? '<span class="tag-equipado">✅ Equipado</span>' : `<button onclick="equiparItem('personagem','${id}');renderizarInventario()" class="btn-equipar">Equipar</button>`}
-                </div>`;
-            });
-            html += '</div>';
-        } else {
-            html += '<p class="vazio">Nenhum personagem ainda. Compre na loja!</p>';
-        }
-    } else if (invAbaAtiva === 'ranks') {
-        if (temRanks) {
-            html += '<div class="inv-grid">';
-            r.forEach(id => {
-                const rank = lojaRanks.find(x => x.id === id);
-                if (!rank) return;
-                const eq = user.equipado.rank === id;
-                html += `<div class="card-inv ${eq ? 'equipado' : ''}" style="border-color:${rank.cor}">
-                    <div class="card-info">
-                        <strong>${rank.icone} ${rank.nome}</strong>
-                        <small class="rank-mult-info">⚡${rank.multiplicadorXP}x XP</small>
-                    </div>
-                    ${eq ? '<span class="tag-equipado">✅ Equipado</span>' : `<button onclick="equiparItem('rank','${id}');renderizarInventario()" class="btn-equipar">Equipar</button>`}
-                </div>`;
-            });
-            html += '</div>';
-        } else {
-            html += '<p class="vazio">Nenhum rank ainda. Compre na loja!</p>';
-        }
-    } else if (invAbaAtiva === 'posts') {
-        if (temPosts) {
-            html += '<div class="inv-grid">';
-            ps.forEach(id => {
-                const post = lojaPosts.find(x => x.id === id);
-                if (!post) return;
-                const eq = user.equipado.post === id;
-                html += `<div class="card-inv post-card ${eq ? 'equipado' : ''}">
-                    <div class="card-info"><strong>${post.nome}</strong><small>${post.conteudo}</small></div>
-                    ${eq ? '<span class="tag-equipado">✅ Ativo</span>' : `<button onclick="equiparItem('post','${id}');renderizarInventario()" class="btn-equipar">Ativar</button>`}
-                </div>`;
-            });
-            html += '</div>';
-        } else {
-            html += '<p class="vazio">Nenhum post ainda. Compre na loja!</p>';
-        }
-    }
+    html += '</div>';
+    container.innerHTML = html;
 
-    c.innerHTML = html;
-    setTimeout(() => {
-        if (invAbaAtiva === 'personagens') {
-            p.forEach(id => {
-                const el = document.getElementById(`invpixel-${id}`);
-                if (el) renderPixel(el, pixelCharacters[id], 3);
-            });
-        }
-    }, 50);
+    // Render pixel art for personagens
+    if (invAbaAtual === 'personagens') {
+        itens.forEach(id => {
+            if (pixelCharacters[id]) {
+                setTimeout(() => renderPixel('invPixel_' + id, id, 3), 50);
+            }
+        });
+    }
 }
 
 function mudarInvAba(aba) {
-    invAbaAtiva = aba;
+    invAbaAtual = aba;
     renderizarInventario();
 }
 
-// ===== PERFIL =====
+// ===== PROFILE =====
 function renderizarPerfil() {
-    const pct = user.totalPerguntas > 0 ? Math.round((user.totalAcertos / user.totalPerguntas) * 100) : 0;
-    const personEq = user.equipado.personagem ? pixelCharacters[user.equipado.personagem] : null;
-    const rankEq = user.equipado.rank ? lojaRanks.find(r => r.id === user.equipado.rank) : null;
-    const postEq = user.equipado.post ? lojaPosts.find(p => p.id === user.equipado.post) : null;
-    let html = `
-        <div class="perfil-header">
-            ${personEq ? `<div class="pixel-container perfil-pixel"><canvas id="perfpixel-${user.equipado.personagem}" class="pixel-art pixel-lg"></canvas></div>` : '<div class="perfil-avatar-placeholder">🎮</div>'}
-            <div class="perfil-info">
-                <h2>Nível ${user.nivel}</h2>
-                <div class="xp-bar-grande"><div class="xp-bar-grande-preenchimento" style="width:${user.nivel >= NIVEL_MAX ? 100 : Math.round((user.xp / user.xpProximoNivel) * 100)}%"></div></div>
-                <span class="xp-texto">${user.nivel >= NIVEL_MAX ? 'MAX LEVEL' : `${user.xp} / ${user.xpProximoNivel} XP`}</span>
-                ${rankEq ? `<p class="rank-exibido" style="color:${rankEq.cor}">${rankEq.icone} ${rankEq.nome} <span class="rank-mult-info">⚡${rankEq.multiplicadorXP}x XP</span></p>` : ''}
-                ${postEq ? `<p class="post-exibido">${postEq.conteudo}</p>` : ''}
-            </div>
-        </div>
-        <div class="perfil-stats">
-            <div class="stat-card"><span class="stat-num">${user.totalPerguntas}</span><span>Perguntas</span></div>
-            <div class="stat-card"><span class="stat-num">${user.totalAcertos}</span><span>Acertos</span></div>
-            <div class="stat-card"><span class="stat-num">${pct}%</span><span>Aproveitamento</span></div>
-            <div class="stat-card"><span class="stat-num">${user.maxStreak}</span><span>Max Streak</span></div>
-            <div class="stat-card"><span class="stat-num">${user.moedas}</span><span>🪙 Moedas</span></div>
-            <div class="stat-card"><span class="stat-num">${user.inventario.personagens.length}</span><span>🎭 Personagens</span></div>
-        </div>`;
-    document.getElementById('perfilConteudo').innerHTML = html;
-    if (personEq) {
-        setTimeout(() => {
-            const el = document.getElementById(`perfpixel-${user.equipado.personagem}`);
-            if (el) renderPixel(el, personEq, 6);
-        }, 50);
+    const container = document.getElementById('perfilConteudo');
+    if (!container || !user) return;
+
+    const rankItem = user.equipado.rank ? lojaRanks.find(r => r.id === user.equipado.rank) : null;
+    const postItem = user.equipado.post ? lojaPosts.find(p => p.id === user.equipado.post) : null;
+    const personItem = user.equipado.personagem ? pixelCharacters[user.equipado.personagem] : null;
+
+    let html = '<div class="perfil-header">';
+    html += '<div class="perfil-avatar-placeholder">';
+    if (personItem) {
+        html += '<div class="perfil-pixel"><canvas id="perfilPixel" class="pixel-art pixel-lg"></canvas></div>';
+    } else {
+        html += '👤';
+    }
+    html += '</div>';
+    html += '<div class="perfil-info">';
+    html += '<h2>Nivel ' + user.nivel + '</h2>';
+    const pct = user.xpProximoNivel > 0 ? Math.min(100, Math.floor((user.xp / user.xpProximoNivel) * 100)) : 100;
+    html += '<div class="xp-bar-grande"><div class="xp-bar-grande-preenchimento" style="width:' + pct + '%"></div></div>';
+    html += '<div class="xp-texto">' + (user.nivel >= NIVEL_MAX ? 'MAX Nivel' : user.xp + '/' + user.xpProximoNivel + ' XP') + '</div>';
+    if (rankItem) html += '<div class="rank-exibido">' + rankItem.icone + ' ' + rankItem.nome + ' (x' + rankItem.mult + ')</div>';
+    if (postItem) html += '<div class="post-exibido">"' + postItem.desc + '"</div>';
+    html += '</div></div>';
+
+    html += '<div class="perfil-stats">';
+    html += '<div class="stat-card"><span class="stat-num">' + (user.totalAcertos) + '</span><span>Total Acertos</span></div>';
+    html += '<div class="stat-card"><span class="stat-num">' + (user.totalPerguntas) + '</span><span>Total Perguntas</span></div>';
+    html += '<div class="stat-card"><span class="stat-num">' + (user.totalPerguntas > 0 ? Math.round((user.totalAcertos / user.totalPerguntas) * 100) : 0) + '%</span><span>Precisao</span></div>';
+    html += '<div class="stat-card"><span class="stat-num">' + user.maxStreak + '</span><span>Max Streak</span></div>';
+    html += '<div class="stat-card"><span class="stat-num">' + user.moedas + '</span><span>Moedas</span></div>';
+    html += '<div class="stat-card"><span class="stat-num">' + generosJogados.length + '</span><span>Generos Jogados</span></div>';
+    html += '</div>';
+
+    html += '<h3 class="secao-titulo" style="margin-top:20px">🏆 Conquistas (' + (user.conquistas || []).length + '/' + conquistas.length + ')</h3>';
+    html += '<div class="inv-grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">';
+    conquistas.forEach(c => {
+        const desbloqueada = (user.conquistas || []).includes(c.id);
+        html += '<div class="card-inv ' + (desbloqueada ? 'equipado' : '') + '" style="opacity:' + (desbloqueada ? '1' : '0.4') + '">';
+        html += '<div style="font-size:2rem;margin-bottom:4px">' + c.icone + '</div>';
+        html += '<div class="card-info"><strong style="font-size:0.75rem">' + c.nome + '</strong><small style="font-size:0.6rem">' + c.desc + '</small></div>';
+        html += desbloqueada ? '<span class="tag-equipado">✅</span>' : '<span style="color:rgba(255,255,255,0.3)">🔒</span>';
+        html += '</div>';
+    });
+    html += '</div>';
+
+    container.innerHTML = html;
+
+    if (personItem) {
+        setTimeout(() => renderPixel('perfilPixel', user.equipado.personagem, 6), 50);
     }
 }
 
-// ===== NOTIFICAÇÃO =====
-function notificar(texto, cor) {
-    const el = document.createElement('div');
-    el.className = 'notificacao';
-    el.innerText = texto;
-    el.style.borderLeftColor = cor || '#4ade80';
-    document.body.appendChild(el);
-    setTimeout(() => el.classList.add('show'), 10);
-    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); }, 2500);
+// ===== CHARACTER PASSIVES =====
+function getPassiva(personagemId) {
+    const passivas = {
+        naruto: { nome: 'Determinacao', desc: '+5% XP em todas as fontes', aplicar: (xp) => Math.floor(xp * 1.05) },
+        goku: { nome: 'Super Saiyajin', desc: '+1 vida no inicio do quiz', aplicar: null },
+        luffy: { nome: 'Rei dos Piratas', desc: '+10% moedas ganhas', aplicarMoedas: (m) => Math.floor(m * 1.1) },
+        pikachu: { nome: 'Eletricidade', desc: '+3s extra no timer', aplicar: null },
+        tanjiro: { nome: 'Folego Constante', desc: '10% chance de nao perder vida ao errar', aplicar: null },
+        gojo: { nome: 'Seis Olhos', desc: 'Poder pode ser usado 2 vezes por quiz', aplicar: null },
+        mikasa: { nome: 'Lealdade', desc: '+2 moedas extras por acerto', aplicar: null },
+        sailor: { nome: 'Luar', desc: 'Comeca cada quiz com todas as vidas +1 extra', aplicar: null },
+        vegeta: { nome: 'Principe Sayajin', desc: '+15% XP em todas as fontes', aplicar: (xp) => Math.floor(xp * 1.15) },
+        itachi: { nome: 'Sharingan', desc: 'Uma opcao errada e eliminada automaticamente', aplicar: null }
+    };
+    return passivas[personagemId] || null;
 }
 
-// ===== INICIALIZAÇÃO =====
+function aplicarPassivaInicioQuiz() {
+    const personId = user.equipado.personagem;
+    if (!personId) return;
+    const passiva = getPassiva(personId);
+    if (!passiva) return;
+    if (personId === 'goku' || personId === 'sailor') {
+        const extra = personId === 'sailor' ? 1 : 0;
+        vidas = Math.min(vidas + extra + (personId === 'goku' ? 1 : 0), 5);
+        atualizarVidas();
+    }
+}
+
+function aplicarBonusPassivaXP(xp) {
+    const personId = user.equipado.personagem;
+    if (!personId) return xp;
+    const passiva = getPassiva(personId);
+    if (!passiva || !passiva.aplicar) return xp;
+    return passiva.aplicar(xp);
+}
+
+function aplicarBonusPassivaMoedas(moedas) {
+    const personId = user.equipado.personagem;
+    if (!personId) return moedas;
+    const passiva = getPassiva(personId);
+    if (passiva && passiva.aplicarMoedas) return passiva.aplicarMoedas(moedas);
+    if (personId === 'mikasa') return moedas + 2;
+    return moedas;
+}
+
+function getTimerBonusPassiva() {
+    const personId = user.equipado.personagem;
+    if (personId === 'pikachu') return 3;
+    return 0;
+}
+
+function getMaxPoderUsos() {
+    const personId = user.equipado.personagem;
+    if (personId === 'gojo') return 2;
+    return 1;
+}
+
+function getChanceSalvarVida() {
+    const personId = user.equipado.personagem;
+    if (personId === 'tanjiro' && Math.random() < 0.1) return true;
+    return false;
+}
+
+// ===== DAILY REWARD =====
+function verificarRecompensaDiaria() {
+    const hoje = new Date().toDateString();
+    const ultimo = localStorage.getItem('quizMastersDaily');
+    if (ultimo === hoje) return;
+    const bonusXP = 50 + Math.floor(Math.random() * 50);
+    const bonusMoedas = 20 + Math.floor(Math.random() * 30);
+    ganharXp(bonusXP);
+    ganharMoedas(bonusMoedas);
+    localStorage.setItem('quizMastersDaily', hoje);
+    notificar('🎁 Recompensa Diaria: +' + bonusXP + ' XP e +' + bonusMoedas + ' moedas!', '#ffd700');
+}
+
+// ===== NOTIFICATION =====
+let notificacaoTimer = null;
+
+function notificar(texto, cor) {
+    let el = document.getElementById('notificacaoGlobal');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'notificacaoGlobal';
+        el.className = 'notificacao';
+        document.body.appendChild(el);
+    }
+    if (notificacaoTimer) clearTimeout(notificacaoTimer);
+    el.innerText = texto;
+    el.style.borderLeftColor = cor || '#4ade80';
+    el.classList.add('show');
+    notificacaoTimer = setTimeout(() => {
+        el.classList.remove('show');
+    }, 3000);
+}
+
+// ===== INICIALIZACAO =====
+carregarUser();
+verificarRecompensaDiaria();
+renderizarGeneros();
+resetarQuiz();
 atualizarHUD();

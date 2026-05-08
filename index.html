@@ -20,10 +20,34 @@
 
     <div id="floatingPopups"></div>
 
+    <div id="charDetailOverlay">
+        <div id="charDetailModal">
+            <button id="charDetailClose" onclick="fecharDetalhePersonagem()">✕</button>
+            <canvas id="charDetailPixel" class="char-detail-pixel"></canvas>
+            <h2 id="charDetailNome"></h2>
+            <div id="charDetailQuote"></div>
+            <div class="char-detail-info">
+                <div class="char-detail-section">
+                    <span class="char-detail-label">⚔️ Poder</span>
+                    <span id="charDetailPoder"></span>
+                </div>
+                <div class="char-detail-section">
+                    <span class="char-detail-label">🛡️ Passiva</span>
+                    <span id="charDetailPassiva"></span>
+                </div>
+            </div>
+            <div id="charDetailBgEmojis"></div>
+        </div>
+    </div>
+
     <div id="charWidget" style="display:none">
         <div class="char-widget-inner">
             <canvas id="charWidgetPixel" class="char-widget-pixel"></canvas>
             <span id="charWidgetNome" class="char-widget-nome">Naruto</span>
+            <span id="charWidgetPassiva" class="char-widget-passiva"></span>
+            <div class="char-widget-carga-container">
+                <div id="charWidgetCarga" class="char-widget-carga"></div>
+            </div>
             <button id="charWidgetPoder" class="char-widget-poder" onclick="usarPoder()">💜 Poder</button>
         </div>
     </div>
@@ -34,6 +58,8 @@
                 <span id="vida1" class="vida">❤️</span>
                 <span id="vida2" class="vida">❤️</span>
                 <span id="vida3" class="vida">❤️</span>
+                <span id="vida4" class="vida" style="display:none">❤️</span>
+                <span id="vida5" class="vida" style="display:none">❤️</span>
             </div>
             <span id="hudNivel" class="hud-nivel">LV 1</span>
             <div class="hud-xp-bar">
@@ -60,23 +86,7 @@
         <div id="generoSelecao">
             <h2>🎮 Escolha o Gênero</h2>
             <p>Selecione quais tipos de perguntas você quer:</p>
-            <div class="genero-grid">
-                <button onclick="iniciarQuiz('games')" class="genero-btn">
-                    <span class="genero-icone">🎮</span>
-                    <span class="genero-nome">Games</span>
-                    <span class="genero-desc">Geral, FPS, RPG, Pixel...</span>
-                </button>
-                <button onclick="iniciarQuiz('filmes')" class="genero-btn">
-                    <span class="genero-icone">🎬</span>
-                    <span class="genero-nome">Filmes</span>
-                    <span class="genero-desc">Ação, Ficção, Animação...</span>
-                </button>
-                <button onclick="iniciarQuiz('todos')" class="genero-btn destaque">
-                    <span class="genero-icone">🌟</span>
-                    <span class="genero-nome">Todos</span>
-                    <span class="genero-desc">Mistura completa!</span>
-                </button>
-            </div>
+            <div id="generoGrid" class="genero-grid"></div>
         </div>
         <div id="quizContainer" style="display:none">
             <h1>🎮 Quiz Masters</h1>
