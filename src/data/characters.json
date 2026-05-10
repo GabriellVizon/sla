@@ -45,7 +45,7 @@
       "emojis": ["🐉", "✨", "🍚"],
       "bgColors": ["#f87171", "#3b82f6"]
     },
-    "price": 150
+    "price": 250
   },
   {
     "id": "luffy",
@@ -69,7 +69,7 @@
       "emojis": ["☠️", "🍖", "🏴‍☠️"],
       "bgColors": ["#f87171", "#fbbf24"]
     },
-    "price": 150
+    "price": 300
   },
   {
     "id": "pikachu",
@@ -93,7 +93,7 @@
       "emojis": ["⚡", "⚡", "🔋"],
       "bgColors": ["#fbbf24", "#f59e0b"]
     },
-    "price": 150
+    "price": 320
   },
   {
     "id": "tanjiro",
@@ -117,7 +117,7 @@
       "emojis": ["🌊", "🗡️", "💧"],
       "bgColors": ["#4ade80", "#1a6b3c"]
     },
-    "price": 150
+    "price": 175
   },
   {
     "id": "gojo",
@@ -141,7 +141,7 @@
       "emojis": ["💜", "👁️", "🌀"],
       "bgColors": ["#3b82f6", "#1e3a5f"]
     },
-    "price": 150
+    "price": 750
   },
   {
     "id": "mikasa",
@@ -165,7 +165,7 @@
       "emojis": ["🗡️", "🧣", "🕊️"],
       "bgColors": ["#8b5cf6", "#4a1d6e"]
     },
-    "price": 150
+    "price": 200
   },
   {
     "id": "sailor",
@@ -189,7 +189,7 @@
       "emojis": ["🌙", "✨", "💖"],
       "bgColors": ["#ec4899", "#7e22ce"]
     },
-    "price": 150
+    "price": 350
   },
   {
     "id": "vegeta",
@@ -213,7 +213,7 @@
       "emojis": ["💥", "👑", "🔥"],
       "bgColors": ["#14b8a6", "#0f766e"]
     },
-    "price": 150
+    "price": 375
   },
   {
     "id": "itachi",
@@ -237,7 +237,7 @@
       "emojis": ["🐦‍⬛", "🔮", "🍃"],
       "bgColors": ["#f87171", "#1a1a1a"]
     },
-    "price": 150
+    "price": 375
   },
   {
     "id": "sukuna",
@@ -261,6 +261,6 @@
       "emojis": ["👁️", "🔪", "💀"],
       "bgColors": ["#dc2626", "#1a1a1a"]
     },
-    "price": 0
+    "price": 750
   }
 ]

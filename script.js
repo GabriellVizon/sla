@@ -746,57 +746,57 @@ const CHARACTERS = [
     passive:{ name:"Determinação", desc:"+5% XP em todas as fontes" },
     details:{ quote:"Vou me tornar Hokage, acredite!", emojis:["🍜","🦊","🌀"], bgColors:["#f7971e","#ff6b00"] }
   },
-  { id:"goku", name:"Goku", image:"public/characters/goku.png", color:"#f87171", rarity:"rare", price:150,
+  { id:"goku", name:"Goku", image:"public/characters/goku.png", color:"#f87171", rarity:"rare", price:250,
     power:{ name:"Kamehameha", desc:"Elimina 2 opcoes erradas", icon:"⚡", type:"eliminar_opcoes", color:"#3b82f6" },
     passive:{ name:"Super Saiyajin", desc:"+1 vida no inicio do quiz" },
     details:{ quote:"Isso ultrapassa 9000!", emojis:["🐉","✨","🍚"], bgColors:["#f87171","#3b82f6"] }
   },
-  { id:"luffy", name:"Luffy", image:"public/characters/luffy.png", color:"#f87171", rarity:"rare", price:150,
+  { id:"luffy", name:"Luffy", image:"public/characters/luffy.png", color:"#f87171", rarity:"rare", price:320,
     power:{ name:"Gomu Gomu", desc:"Pula a questao sem perder vida", icon:"🪨", type:"pular_questao", color:"#ef4444" },
     passive:{ name:"Rei dos Piratas", desc:"+10% moedas ganhas" },
     details:{ quote:"Eu vou ser o Rei dos Piratas!", emojis:["☠️","🍖","🏴‍☠️"], bgColors:["#f87171","#fbbf24"] }
   },
-  { id:"pikachu", name:"Pikachu", image:"public/characters/pikachu.png", color:"#fbbf24", rarity:"rare", price:150,
+  { id:"pikachu", name:"Pikachu", image:"public/characters/pikachu.png", color:"#fbbf24", rarity:"rare", price:320,
     power:{ name:"Choque do Trovao", desc:"Revela a resposta certa por 2s", icon:"⚡", type:"revelar_resposta", color:"#fbbf24" },
     passive:{ name:"Eletricidade", desc:"+3s extra no timer" },
     details:{ quote:"Pika Pika!", emojis:["⚡","⚡","🔋"], bgColors:["#fbbf24","#f59e0b"] }
   },
-  { id:"tanjiro", name:"Tanjiro", image:"public/characters/tanjiro.png", color:"#4ade80", rarity:"epic", price:150,
+  { id:"tanjiro", name:"Tanjiro", image:"public/characters/tanjiro.png", color:"#4ade80", rarity:"epic", price:175,
     power:{ name:"Respiracao da Agua", desc:"Recupera 1 vida", icon:"🌊", type:"curar_vida", color:"#4ade80" },
     passive:{ name:"Fôlego Constante", desc:"10% chance de nao perder vida ao errar" },
     details:{ quote:"Hinokami Kagura!", emojis:["🌊","🗡️","💧"], bgColors:["#4ade80","#1a6b3c"] }
   },
-  { id:"gojo", name:"Gojo", image:"public/characters/gojo.png", color:"#3b82f6", rarity:"mythic", price:150,
+  { id:"gojo", name:"Gojo", image:"public/characters/gojo.png", color:"#3b82f6", rarity:"mythic", price:750,
     power:{ name:"Roxo (Hollow Purple)", desc:"PASSAR AUTOMATICO na questao! 💜", icon:"💜", type:"passar_questao", color:"#a855f7" },
     passive:{ name:"Seis Olhos", desc:"Poder pode ser usado 2 vezes por quiz" },
-    details:{ quote:"Nah, eu venceria.", emojis:["💜","👁️","🌀"], bgColors:["#3b82f6","#1e3a5f"] }
+    details:{ quote:"Nah, eu venceria.", emojis:["💜","👁️","🌀"], bgColors:["#9b1af1","#4a03a7"] }
   },
-  { id:"mikasa", name:"Mikasa", image:"public/characters/mikasa.png", color:"#8b5cf6", rarity:"epic", price:150,
+  { id:"mikasa", name:"Mikasa", image:"public/characters/mikasa.png", color:"#8b5cf6", rarity:"epic", price:200,
     power:{ name:"Laminas Titanicas", desc:"Dobra moedas no proximo acerto", icon:"🗡️", type:"moedas_dobradas", color:"#8b5cf6" },
     passive:{ name:"Lealdade", desc:"+2 moedas extras por acerto" },
     details:{ quote:"Esse mundo e cruel...", emojis:["🗡️","🧣","🕊️"], bgColors:["#8b5cf6","#4a1d6e"] }
   },
-  { id:"sailor", name:"Sailor Moon", image:"public/characters/sailor.png", color:"#ec4899", rarity:"epic", price:150,
+  { id:"sailor", name:"Sailor Moon", image:"public/characters/sailor.png", color:"#ec4899", rarity:"epic", price:350,
     power:{ name:"Moon Healing", desc:"Restaura TODAS as vidas!", icon:"🌙", type:"curar_tudo", color:"#ec4899" },
     passive:{ name:"Luar", desc:"Comeca cada quiz com todas as vidas +1 extra" },
     details:{ quote:"Em nome da Lua, eu te puno!", emojis:["🌙","✨","💖"], bgColors:["#ec4899","#7e22ce"] }
   },
-  { id:"vegeta", name:"Vegeta", image:"public/characters/vegeta.png", color:"#f87171", rarity:"epic", price:150,
+  { id:"vegeta", name:"Vegeta", image:"public/characters/vegeta.png", color:"#f87171", rarity:"epic", price:350,
     power:{ name:"Final Flash", desc:"Triplica XP no proximo acerto", icon:"💥", type:"xp_triplo", color:"#14b8a6" },
     passive:{ name:"Príncipe Sayajin", desc:"+15% XP em todas as fontes" },
     details:{ quote:"Eu sou o Principe dos Sayajins!", emojis:["💥","👑","🔥"], bgColors:["#14b8a6","#0f766e"] }
   },
-  { id:"itachi", name:"Itachi", image:"public/characters/itachi.png", color:"#f87171", rarity:"mythic", price:150,
+  { id:"itachi", name:"Itachi", image:"public/characters/itachi.png", color:"#f87171", rarity:"mythic", price:375,
     power:{ name:"Tsukuyomi", desc:"Revela a resposta certa por 3s", icon:"🔮", type:"revelar_tempo", color:"#f87171" },
     passive:{ name:"Sharingan", desc:"Uma opcao errada e eliminada automaticamente" },
     details:{ quote:"Perdoe-me, Sasuke...", emojis:["🐦‍⬛","🔮","🍃"], bgColors:["#f87171","#1a1a1a"] }
   },
-  { id:"meliodas", name:"Meliodas", image:"public/characters/meliodas.png", color:"#fbbf24", rarity:"mythic", price:150,
+  { id:"meliodas", name:"Meliodas", image:"public/characters/meliodas.png", color:"#fbbf24", rarity:"mythic", price:500,
     power:{ name:"Full Counter", desc:"Chance de refletir o dano e nao perder vida ao errar", icon:"🛡️", type:"refletir_dano", color:"#fbbf24" },
     passive:{ name:"Pacto com o Demônio", desc:"+20% de dano critico" },
     details:{ quote:"Eu sou o Rei dos Piratas!", emojis:["☠️","🍖","🏴‍☠️"], bgColors:["#f87171","#fbbf24"] }
   },
-  { id:"sukuna", name:"Sukuna", image:"public/characters/sukuna.png", color:"#dc2626", rarity:"mythic", price:0,
+  { id:"sukuna", name:"Sukuna", image:"public/characters/sukuna.png", color:"#dc2626", rarity:"mythic", price:750,
     power:{ name:"Corte Nether", desc:"Causa dano massivo nas questoes", icon:"🔪", type:"dano_massivo", color:"#dc2626" },
     passive:{ name:"Rei das Maldições", desc:"10% chance de acerto critico automatico" },
     details:{ quote:"Eu sou o Rei das Maldições!", emojis:["👁️","🔪","💀"], bgColors:["#dc2626","#1a1a1a"] }
