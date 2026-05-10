@@ -1836,10 +1836,10 @@ function animarPoderPersonagem(personagemId) {
     const opcoesEl = document.getElementById('opcoes');
     let opcoesRect = null;
     if (opcoesEl) opcoesRect = opcoesEl.getBoundingClientRect();
-    const charDurations = { naruto: 2500, goku: 4000, luffy: 2500, pikachu: 2500, tanjiro: 2500, gojo: 3800, mikasa: 2500, sailor: 2500, vegeta: 4000, itachi: 2800, meliodas: 3800 };
+    const charDurations = { naruto: 4000, goku: 4000, luffy: 2500, pikachu: 2500, tanjiro: 2500, gojo: 3800, mikasa: 2500, sailor: 2500, vegeta: 4000, itachi: 2800, meliodas: 3800 };
     const duracao = charDurations[personagemId] || 2500;
     const start = Date.now();
-    window._gojoAutoProceeded = false;
+
 
     function drawCircle(x, y, r, cor, blur) {
         ctx.save();
@@ -1859,57 +1859,371 @@ function animarPoderPersonagem(personagemId) {
 
         switch (personagemId) {
             case 'naruto': {
-                const rPhase = progress < 0.3 ? 0 : progress < 0.55 ? 1 : 2;
-                const pp = rPhase === 0 ? progress / 0.3 : rPhase === 1 ? (progress - 0.3) / 0.25 : (progress - 0.55) / 0.45;
-                if (rPhase === 0) {
-                    const orbX = startX + 20, orbY = startY;
-                    const r = 5 + pp * 20;
-                    drawCircle(orbX, orbY, r, 'rgba(102, 217, 255, ' + (0.8 - pp * 0.3) + ')', 30);
-                    drawCircle(orbX, orbY, r * 0.5, 'rgba(255,255,255,0.9)', 40);
+                const narDur = 4000;
+                const pp = Math.min(1, elapsed / narDur);
+                const nx = startX + 20;
+                const ny = startY;
+                const rasenganX = nx + 50;
+                const rasenganY = ny - 10;
+
+                function np(x, y, r, color, blur) {
                     ctx.save();
-                    ctx.strokeStyle = '#66d9ff';
-                    ctx.lineWidth = 2;
-                    for (let i = 0; i < 4; i++) {
-                        const a = pp * 8 + i * 1.57;
+                    ctx.fillStyle = color;
+                    ctx.shadowColor = color;
+                    ctx.shadowBlur = blur || 25;
+                    ctx.beginPath();
+                    ctx.arc(x, y, r, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                // ===== PHASE 0: NARUTO POSES + SPIRAL CHAKRA (0.00 - 0.10) =====
+                if (pp < 0.10) {
+                    const t = pp / 0.10;
+                    for (let i = 0; i < 10 * t; i++) {
+                        const a = Math.random() * 6.28;
+                        const d = 5 + t * 35;
+                        np(nx + Math.cos(a) * d, ny + Math.sin(a) * d, 2 + Math.random() * 3, 'rgba(102, 217, 255, ' + (0.3 + t * 0.4) + ')', 12);
+                    }
+                    np(nx, ny, 5 + t * 15, 'rgba(102, 217, 255, ' + (0.15 + t * 0.2) + ')', 30);
+                    np(rasenganX - 10, rasenganY, 3 + t * 4, 'rgba(255, 255, 255, ' + (t * 0.3) + ')', 20);
+                }
+
+                // ===== PHASE 1: RASENGAN FORMS + GROWS (0.10 - 0.30) =====
+                else if (pp < 0.30) {
+                    const t = (pp - 0.10) / 0.20;
+                    const radius = 5 + t * 28;
+                    np(rasenganX, rasenganY, radius + 18, 'rgba(56, 189, 248, ' + (0.06 + t * 0.08) + ')', 50);
+                    np(rasenganX, rasenganY, radius, 'rgba(102, 217, 255, ' + (0.2 + t * 0.4) + ')', 40);
+                    np(rasenganX, rasenganY, radius * 0.4, 'rgba(147, 234, 255, ' + (t * 0.5) + ')', 25);
+                    np(rasenganX, rasenganY, radius * 0.15, 'rgba(255, 255, 255, ' + (t * 0.6) + ')', 20);
+                    // Spiral lines
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.3 * t) + ')';
+                    ctx.lineWidth = 1.5;
+                    ctx.shadowColor = '#66d9ff';
+                    ctx.shadowBlur = 12;
+                    for (let i = 0; i < 3; i++) {
+                        const rot = t * 4 + i * 2.09;
                         ctx.beginPath();
-                        ctx.arc(orbX, orbY, r * 0.7 + Math.sin(a) * 5, 0, 6.28);
+                        for (let s = 0; s <= 20; s++) {
+                            const frac = s / 20;
+                            const sa = rot + frac * 6.28;
+                            const sr = radius * 0.15 + frac * radius * 0.6;
+                            const sx = rasenganX + Math.cos(sa) * sr;
+                            const sy = rasenganY + Math.sin(sa) * sr;
+                            if (s === 0) ctx.moveTo(sx, sy);
+                            else ctx.lineTo(sx, sy);
+                        }
                         ctx.stroke();
                     }
                     ctx.restore();
-                } else if (rPhase === 1) {
-                    const fromX = startX + 20, fromY = startY;
-                    const toX = cx, toY = cy;
-                    const curX = fromX + (toX - fromX) * pp;
-                    const curY = fromY + (toY - fromY) * pp;
-                    const r = 15 - pp * 5;
-                    drawCircle(curX, curY, r, 'rgba(102, 217, 255, 0.7)', 30);
+                    for (let i = 0; i < 12 * t; i++) {
+                        const a = Math.random() * 6.28;
+                        const d = 12 + (1 - t) * 35;
+                        np(rasenganX + Math.cos(a) * d, rasenganY + Math.sin(a) * d, 2 + Math.random() * 2, '#93eaff', 10);
+                    }
+                    np(nx + 5, ny, 3, 'rgba(255, 255, 255, ' + (0.2 + t * 0.3) + ')', 15);
+                }
+
+                // ===== PHASE 2: RASEN-SHURIKEN EMERGES (0.30 - 0.48) =====
+                else if (pp < 0.48) {
+                    const t = (pp - 0.30) / 0.18;
+                    const radius = 33 + t * 20;
+                    // Outer glow
+                    np(rasenganX, rasenganY, radius + 25, 'rgba(56, 189, 248, ' + (0.12 + t * 0.06) + ')', 60);
+                    np(rasenganX, rasenganY, radius, 'rgba(102, 217, 255, ' + (0.5 + t * 0.2) + ')', 50);
+                    np(rasenganX, rasenganY, radius * 0.6, 'rgba(147, 234, 255, ' + (0.5 + t * 0.2) + ')', 35);
+                    np(rasenganX, rasenganY, radius * 0.2, 'rgba(255, 255, 255, ' + (0.6 + t * 0.3) + ')', 25);
+                    // Shuriken blades - 4 rotating blades
+                    const bladeAngle = t * 6.28 * 2;
                     ctx.save();
-                    ctx.strokeStyle = 'rgba(102, 217, 255, ' + (0.5 * (1 - pp)) + ')';
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-                    ctx.moveTo(fromX, fromY);
-                    ctx.lineTo(curX, curY);
-                    ctx.stroke();
+                    ctx.shadowColor = '#66d9ff';
+                    ctx.shadowBlur = 25;
+                    for (let b = 0; b < 4; b++) {
+                        const ba = bladeAngle + b * 1.5708;
+                        const bladeLen = radius * (0.5 + t * 0.5);
+                        const bladeWidth = 6 + t * 8;
+                        const tipX = rasenganX + Math.cos(ba) * bladeLen;
+                        const tipY = rasenganY + Math.sin(ba) * bladeLen;
+                        const perpAngle = ba + 1.5708;
+                        ctx.fillStyle = 'rgba(147, 234, 255, ' + (0.3 + t * 0.4) + ')';
+                        ctx.beginPath();
+                        ctx.moveTo(rasenganX + Math.cos(ba) * radius * 0.3, rasenganY + Math.sin(ba) * radius * 0.3);
+                        ctx.lineTo(tipX + Math.cos(perpAngle) * bladeWidth, tipY + Math.sin(perpAngle) * bladeWidth);
+                        ctx.lineTo(tipX - Math.cos(perpAngle) * bladeWidth, tipY - Math.sin(perpAngle) * bladeWidth);
+                        ctx.closePath();
+                        ctx.fill();
+                        // Inner blade line
+                        ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.4 + t * 0.3) + ')';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(rasenganX + Math.cos(ba) * radius * 0.4, rasenganY + Math.sin(ba) * radius * 0.4);
+                        ctx.lineTo(tipX, tipY);
+                        ctx.stroke();
+                    }
                     ctx.restore();
-                } else {
-                    const impactX = cx, impactY = cy;
+                    // Spinning energy rings
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(102, 217, 255, ' + (0.2 * t) + ')';
+                    ctx.lineWidth = 2;
+                    ctx.shadowColor = '#66d9ff';
+                    ctx.shadowBlur = 15;
+                    for (let i = 0; i < 3; i++) {
+                        const ro = radius + i * 8 + t * 5;
+                        ctx.beginPath();
+                        ctx.arc(rasenganX, rasenganY, ro, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                    // Particles
+                    for (let i = 0; i < 25; i++) {
+                        const a = Math.random() * 6.28;
+                        const d = radius * (0.3 + Math.random() * 0.9);
+                        np(rasenganX + Math.cos(a) * d, rasenganY + Math.sin(a) * d, 2 + Math.random() * 4, Math.random() > 0.5 ? '#66d9ff' : '#93eaff', 12);
+                    }
+                    // Screen rumble
+                    if (t > 0.5) {
+                        const shake = 1 + (t - 0.5) * 3;
+                        document.querySelectorAll('#pergunta, #opcoes, .header-info').forEach(el => {
+                            el.style.transform = 'translate(' + (Math.random() - 0.5) * shake + 'px, ' + (Math.random() - 0.5) * shake + 'px)';
+                        });
+                    }
+                }
+
+                // ===== PHASE 3: RASEN-SHURIKEN THROWN (0.48 - 0.62) =====
+                else if (pp < 0.62) {
+                    const t = (pp - 0.48) / 0.14;
+                    const throwX = rasenganX + t * (canvas.width - rasenganX + 50);
+                    const throwY = rasenganY + Math.sin(t * 6.28) * 15;
+                    const radius = 50 * (1 - t * 0.2);
+                    // Shuriken glow while flying
+                    np(throwX, throwY, radius + 20, 'rgba(56, 189, 248, ' + (0.1 * (1 - t)) + ')', 50);
+                    np(throwX, throwY, radius, 'rgba(102, 217, 255, ' + (0.5 + t * 0.3) + ')', 45);
+                    np(throwX, throwY, radius * 0.4, 'rgba(147, 234, 255, ' + (0.5 + t * 0.2) + ')', 30);
+                    np(throwX, throwY, radius * 0.15, 'rgba(255, 255, 255, ' + (0.6 + t * 0.2) + ')', 20);
+                    // Rotating blades
+                    const bladeAngle = t * 6.28 * 3;
+                    ctx.save();
+                    ctx.shadowColor = '#66d9ff';
+                    ctx.shadowBlur = 30;
+                    for (let b = 0; b < 4; b++) {
+                        const ba = bladeAngle + b * 1.5708;
+                        const bladeLen = radius * 0.6;
+                        const bladeWidth = 8 + t * 6;
+                        const tipX = throwX + Math.cos(ba) * bladeLen;
+                        const tipY = throwY + Math.sin(ba) * bladeLen;
+                        const perpAngle = ba + 1.5708;
+                        ctx.fillStyle = 'rgba(147, 234, 255, ' + (0.4 + t * 0.2) + ')';
+                        ctx.beginPath();
+                        ctx.moveTo(throwX + Math.cos(ba) * radius * 0.3, throwY + Math.sin(ba) * radius * 0.3);
+                        ctx.lineTo(tipX + Math.cos(perpAngle) * bladeWidth, tipY + Math.sin(perpAngle) * bladeWidth);
+                        ctx.lineTo(tipX - Math.cos(perpAngle) * bladeWidth, tipY - Math.sin(perpAngle) * bladeWidth);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                    ctx.restore();
+                    // Trail particles
+                    for (let i = 0; i < 15; i++) {
+                        const trailX = throwX - Math.random() * 60;
+                        const trailY = throwY + (Math.random() - 0.5) * 30;
+                        np(trailX, trailY, 2 + Math.random() * 3, '#93eaff', 8);
+                    }
+                    // Wind lines
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(255, 255, 255, ' + (0.15 * t) + ')';
+                    ctx.lineWidth = 1.5;
+                    for (let i = 0; i < 8; i++) {
+                        const wy = throwY + (Math.random() - 0.5) * 50;
+                        ctx.beginPath();
+                        ctx.moveTo(throwX - 80, wy);
+                        ctx.lineTo(throwX - 30, wy + (Math.random() - 0.5) * 15);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+
+                // ===== PHASE 4: IMPACT + ROTATING EXPLOSION (0.62 - 0.80) =====
+                else if (pp < 0.80) {
+                    const t = (pp - 0.62) / 0.18;
+                    const impactX = rasenganX + 0.85 * (canvas.width - rasenganX + 50);
+                    const impactY = rasenganY;
+                    const explosionR = 15 + t * 60;
+                    // Outer blast
+                    np(impactX, impactY, explosionR + 30, 'rgba(56, 189, 248, ' + (0.06 + t * 0.08) + ')', 60);
+                    np(impactX, impactY, explosionR, 'rgba(102, 217, 255, ' + (0.2 + t * 0.4) + ')', 50);
+                    np(impactX, impactY, explosionR * 0.6, 'rgba(147, 234, 255, ' + (0.3 + t * 0.3) + ')', 35);
+                    np(impactX, impactY, explosionR * 0.2, 'rgba(255, 255, 255, ' + (0.5 + t * 0.3) + ')', 25);
+                    // Rotating shuriken debris
+                    const rotAngle = t * 6.28 * 2;
+                    ctx.save();
+                    ctx.shadowColor = '#66d9ff';
+                    ctx.shadowBlur = 30;
+                    for (let b = 0; b < 4; b++) {
+                        const ba = rotAngle + b * 1.5708;
+                        const bladeLen = explosionR * (0.3 + t * 0.4);
+                        const bladeWidth = 5 + t * 10;
+                        const tipX = impactX + Math.cos(ba) * bladeLen;
+                        const tipY = impactY + Math.sin(ba) * bladeLen;
+                        const perpAngle = ba + 1.5708;
+                        ctx.fillStyle = 'rgba(102, 217, 255, ' + (0.3 * (1 - t * 0.3)) + ')';
+                        ctx.beginPath();
+                        ctx.moveTo(impactX + Math.cos(ba) * explosionR * 0.2, impactY + Math.sin(ba) * explosionR * 0.2);
+                        ctx.lineTo(tipX + Math.cos(perpAngle) * bladeWidth, tipY + Math.sin(perpAngle) * bladeWidth);
+                        ctx.lineTo(tipX - Math.cos(perpAngle) * bladeWidth, tipY - Math.sin(perpAngle) * bladeWidth);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                    ctx.restore();
+                    // Shockwave rings
+                    ctx.save();
+                    for (let i = 0; i < 4; i++) {
+                        const ringR = explosionR + i * 12 + t * 20;
+                        ctx.strokeStyle = 'rgba(102, 217, 255, ' + (0.2 * (1 - i * 0.2) * (1 - t * 0.3)) + ')';
+                        ctx.lineWidth = 2 + i;
+                        ctx.shadowColor = '#66d9ff';
+                        ctx.shadowBlur = 20;
+                        ctx.beginPath();
+                        ctx.arc(impactX, impactY, ringR, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                    // Blue screen overlay
+                    const gradAlpha = 0.08 * t;
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(56, 189, 248, ' + gradAlpha + ')';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.restore();
+                    // Bottom gradient
+                    const grad2 = ctx.createLinearGradient(0, canvas.height * 0.6, 0, canvas.height);
+                    grad2.addColorStop(0, 'rgba(56, 189, 248, 0)');
+                    grad2.addColorStop(1, 'rgba(56, 189, 248, ' + (0.12 * t) + ')');
+                    ctx.save();
+                    ctx.fillStyle = grad2;
+                    ctx.fillRect(0, canvas.height * 0.6, canvas.width, canvas.height * 0.4);
+                    ctx.restore();
+                    // Debris particles
                     for (let i = 0; i < 30; i++) {
                         const a = Math.random() * 6.28;
-                        const d = pp * 120 + Math.random() * 60;
-                        const size = 2 + Math.random() * 6;
-                        ctx.save();
-                        ctx.globalAlpha = (1 - pp * 1.2) * 0.8;
-                        ctx.fillStyle = '#66d9ff';
-                        ctx.shadowColor = '#66d9ff';
-                        ctx.shadowBlur = 10;
-                        ctx.beginPath();
-                        ctx.moveTo(impactX, impactY);
-                        ctx.lineTo(impactX + Math.cos(a) * d + (Math.random() - 0.5) * 20, impactY + Math.sin(a) * d + (Math.random() - 0.5) * 20);
-                        ctx.lineWidth = size;
-                        ctx.stroke();
-                        ctx.restore();
+                        const d = explosionR * (0.2 + Math.random() * 1.1);
+                        np(impactX + Math.cos(a) * d, impactY + Math.sin(a) * d, 2 + Math.random() * 5, i % 3 === 0 ? '#93eaff' : '#66d9ff', 12);
                     }
-                    drawCircle(impactX, impactY, 15 * (1 - pp), 'rgba(255,255,255,' + (0.5 * (1 - pp)) + ')', 40);
+                    // Screen shake
+                    const shakeIntensity = 3 + t * 6;
+                    document.querySelectorAll('#pergunta, #opcoes, .header-info').forEach(el => {
+                        el.style.transform = 'translate(' + (Math.random() - 0.5) * shakeIntensity + 'px, ' + (Math.random() - 0.5) * shakeIntensity + 'px)';
+                    });
+                    // Blur question
+                    const perguntaEl = document.getElementById('pergunta');
+                    if (perguntaEl && t > 0.2) {
+                        const blurP = (t - 0.2) / 0.8;
+                        perguntaEl.style.opacity = 1 - blurP * 0.6;
+                        perguntaEl.style.filter = 'blur(' + blurP * 6 + 'px)';
+                    }
+                }
+
+                // ===== PHASE 5: BLUE EXPLOSION PEAK (0.80 - 0.93) =====
+                else if (pp < 0.93) {
+                    const t = (pp - 0.80) / 0.13;
+                    const blastX = rasenganX + 0.85 * (canvas.width - rasenganX + 50);
+                    const blastY = rasenganY;
+                    const blastR = 30 + t * 100;
+                    np(blastX, blastY, blastR + 30, 'rgba(56, 189, 248, ' + (0.06 + t * 0.06) + ')', 60);
+                    np(blastX, blastY, blastR, 'rgba(102, 217, 255, ' + (0.2 + t * 0.3) + ')', 50);
+                    np(blastX, blastY, blastR * 0.6, 'rgba(147, 234, 255, ' + (0.3 + t * 0.2) + ')', 35);
+                    np(blastX, blastY, blastR * 0.15, 'rgba(255, 255, 255, ' + (0.5 * (1 - t * 0.5)) + ')', 30);
+                    // Rotating debris
+                    const rotAngle = t * 6.28 * 3;
+                    ctx.save();
+                    ctx.shadowColor = '#66d9ff';
+                    ctx.shadowBlur = 25;
+                    for (let b = 0; b < 6; b++) {
+                        const ba = rotAngle + b * 1.047;
+                        const bladeLen = blastR * (0.2 + t * 0.3);
+                        const bladeWidth = 3 + t * 6;
+                        const tipX = blastX + Math.cos(ba) * bladeLen;
+                        const tipY = blastY + Math.sin(ba) * bladeLen;
+                        const perpAngle = ba + 1.5708;
+                        ctx.fillStyle = 'rgba(147, 234, 255, ' + (0.2 * (1 - t * 0.4)) + ')';
+                        ctx.beginPath();
+                        ctx.moveTo(blastX + Math.cos(ba) * blastR * 0.15, blastY + Math.sin(ba) * blastR * 0.15);
+                        ctx.lineTo(tipX + Math.cos(perpAngle) * bladeWidth, tipY + Math.sin(perpAngle) * bladeWidth);
+                        ctx.lineTo(tipX - Math.cos(perpAngle) * bladeWidth, tipY - Math.sin(perpAngle) * bladeWidth);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                    ctx.restore();
+                    // Shockwave rings
+                    ctx.save();
+                    for (let i = 0; i < 4; i++) {
+                        const ringR = blastR + i * 15 + t * 25;
+                        ctx.strokeStyle = 'rgba(102, 217, 255, ' + (0.2 * (1 - i * 0.2) * (1 - t * 0.3)) + ')';
+                        ctx.lineWidth = 2 + i;
+                        ctx.shadowColor = '#66d9ff';
+                        ctx.shadowBlur = 20;
+                        ctx.beginPath();
+                        ctx.arc(blastX, blastY, ringR, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                    // Blue screen overlay at peak
+                    const peakAlpha = 0.08 + 0.10 * (1 - t);
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(56, 189, 248, ' + peakAlpha + ')';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.restore();
+                    const grad3 = ctx.createLinearGradient(0, canvas.height * 0.4, 0, canvas.height);
+                    grad3.addColorStop(0, 'rgba(56, 189, 248, 0)');
+                    grad3.addColorStop(1, 'rgba(56, 189, 248, ' + (0.15 * (1 - t * 0.5)) + ')');
+                    ctx.save();
+                    ctx.fillStyle = grad3;
+                    ctx.fillRect(0, canvas.height * 0.4, canvas.width, canvas.height * 0.6);
+                    ctx.restore();
+                    // Floating debris
+                    for (let i = 0; i < 30; i++) {
+                        const a = Math.random() * 6.28;
+                        const d = blastR * (0.2 + Math.random() * 1.2);
+                        np(blastX + Math.cos(a) * d, blastY + Math.sin(a) * d, 2 + Math.random() * 5, '#66d9ff', 8);
+                    }
+                    const perguntaEl = document.getElementById('pergunta');
+                    if (perguntaEl) {
+                        perguntaEl.style.opacity = Math.max(0, 0.4 - t * 0.4);
+                        perguntaEl.style.filter = 'blur(' + (6 + t * 8) + 'px)';
+                    }
+                }
+
+                // ===== PHASE 6: FADEOUT + BLUE CORNER EFFECT (0.93 - 1.00) =====
+                else {
+                    const t = (pp - 0.93) / 0.07;
+                    np(rasenganX, rasenganY, 20 * (1 - t), 'rgba(102, 217, 255, ' + (0.15 * (1 - t)) + ')', 25);
+                    // Blue corner effect (bottom-right)
+                    ctx.save();
+                    const cornerGrad = ctx.createRadialGradient(
+                        canvas.width, canvas.height, 0,
+                        canvas.width, canvas.height, canvas.width * 0.6
+                    );
+                    cornerGrad.addColorStop(0, 'rgba(56, 189, 248, ' + (0.35 * (1 - t * 0.3)) + ')');
+                    cornerGrad.addColorStop(0.4, 'rgba(56, 189, 248, ' + (0.15 * (1 - t * 0.3)) + ')');
+                    cornerGrad.addColorStop(1, 'rgba(56, 189, 248, 0)');
+                    ctx.fillStyle = cornerGrad;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.restore();
+                    ctx.save();
+                    ctx.globalAlpha = t * 0.3;
+                    const fadeGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                    fadeGrad.addColorStop(0, '#0a1a2e');
+                    fadeGrad.addColorStop(0.5, '#0e1e3e');
+                    fadeGrad.addColorStop(1, '#050a1e');
+                    ctx.fillStyle = fadeGrad;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.restore();
+                    if (t > 0.5) {
+                        document.querySelectorAll('#pergunta, #opcoes, .header-info').forEach(el => {
+                            el.style.transform = '';
+                            el.style.opacity = '';
+                            el.style.filter = '';
+                        });
+                    }
                 }
                 break;
             }
@@ -2234,13 +2548,6 @@ function animarPoderPersonagem(personagemId) {
                             el.style.opacity = '';
                             el.style.filter = '';
                         });
-                    }
-                    // Auto next
-                    if (t > 0.8 && !window._gojoAutoProceeded) {
-                        window._gojoAutoProceeded = true;
-                        setTimeout(() => {
-                            if (typeof proximaPergunta === 'function') proximaPergunta();
-                        }, 200);
                     }
                 }
                 break;
@@ -2704,13 +3011,6 @@ function animarPoderPersonagem(personagemId) {
                             el.style.filter = '';
                         });
                     }
-                    // Auto next question
-                    if (t > 0.8 && !window._gojoAutoProceeded) {
-                        window._gojoAutoProceeded = true;
-                        setTimeout(() => {
-                            if (typeof proximaPergunta === 'function') proximaPergunta();
-                        }, 200);
-                    }
                 }
                 break;
             }
@@ -3095,12 +3395,6 @@ function animarPoderPersonagem(personagemId) {
                             el.style.filter = '';
                         });
                     }
-                    if (t > 0.8 && !window._gojoAutoProceeded) {
-                        window._gojoAutoProceeded = true;
-                        setTimeout(() => {
-                            if (typeof proximaPergunta === 'function') proximaPergunta();
-                        }, 200);
-                    }
                 }
                 break;
             }
@@ -3376,12 +3670,6 @@ function animarPoderPersonagem(personagemId) {
                             el.style.filter = '';
                         });
                     }
-                    if (t > 0.8 && !window._gojoAutoProceeded) {
-                        window._gojoAutoProceeded = true;
-                        setTimeout(() => {
-                            if (typeof proximaPergunta === 'function') proximaPergunta();
-                        }, 200);
-                    }
                 }
                 break;
             }
@@ -3392,7 +3680,6 @@ function animarPoderPersonagem(personagemId) {
         } else {
             canvas.classList.remove('ativo');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            window._gojoAutoProceeded = false;
             document.querySelectorAll('#pergunta, #opcoes, .header-info').forEach(el => {
                 el.style.transform = '';
                 el.style.opacity = '';
